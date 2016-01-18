@@ -10,8 +10,8 @@ import org.multibit.hd.ui.events.view.ViewEvents;
 import org.multibit.hd.ui.languages.MessageKey;
 import org.multibit.hd.ui.views.components.*;
 import org.multibit.hd.ui.views.components.borders.TextBubbleBorder;
-import org.multibit.hd.ui.views.components.display_security_alert.DisplaySecurityAlertModel;
-import org.multibit.hd.ui.views.components.display_security_alert.DisplaySecurityAlertView;
+import org.multibit.hd.ui.views.components.display_environment_alert.DisplayEnvironmentAlertModel;
+import org.multibit.hd.ui.views.components.display_environment_alert.DisplayEnvironmentAlertView;
 import org.multibit.hd.ui.views.components.panels.PanelDecorator;
 import org.multibit.hd.ui.views.fonts.AwesomeIcon;
 import org.multibit.hd.ui.views.themes.Themes;
@@ -39,7 +39,7 @@ public class WelcomeLicencePanelView extends AbstractWizardPanelView<WelcomeWiza
 
   private static final Logger log = LoggerFactory.getLogger(WelcomeLicencePanelView.class);
 
-  private ModelAndView<DisplaySecurityAlertModel, DisplaySecurityAlertView> displaySecurityPopoverMaV;
+  private ModelAndView<DisplayEnvironmentAlertModel, DisplayEnvironmentAlertView> displayEnvironmentPopoverMaV;
 
   private boolean licenceAccepted = false;
 
@@ -49,14 +49,14 @@ public class WelcomeLicencePanelView extends AbstractWizardPanelView<WelcomeWiza
    */
   public WelcomeLicencePanelView(AbstractWizard<WelcomeWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.WELCOME_TITLE, AwesomeIcon.GLOBE);
+    super(wizard, panelName, AwesomeIcon.GLOBE, MessageKey.WELCOME_TITLE);
 
   }
 
   @Override
   public void newPanelModel() {
 
-    displaySecurityPopoverMaV = Popovers.newDisplaySecurityPopoverMaV(getPanelName());
+    displayEnvironmentPopoverMaV = Popovers.newDisplayEnvironmentPopoverMaV(getPanelName());
 
   }
 
@@ -102,6 +102,7 @@ public class WelcomeLicencePanelView extends AbstractWizardPanelView<WelcomeWiza
     // Ensure we maintain the overall theme (no vertical since we're using rounded border)
     ScrollBarUIDecorator.apply(scrollPane, false);
 
+    contentPanel.add(Labels.newLicenceNote(), "grow,push,span 2,wrap");
     contentPanel.add(scrollPane, "grow,push,span 2," + MultiBitUI.WIZARD_MAX_WIDTH_MIG + ",wrap");
 
     contentPanel.add(Panels.newLicenceSelector(
@@ -130,15 +131,10 @@ public class WelcomeLicencePanelView extends AbstractWizardPanelView<WelcomeWiza
   @Override
   public void afterShow() {
 
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
+    // This requires a environment popover check because we will
+    // shortly be revealing wallet words and entering PINs
+    checkForEnvironmentEventPopover(displayEnvironmentPopoverMaV);
 
-        // This requires a security popover check
-        checkForSecurityEventPopover(displaySecurityPopoverMaV);
-
-      }
-    });
   }
 
   @Override

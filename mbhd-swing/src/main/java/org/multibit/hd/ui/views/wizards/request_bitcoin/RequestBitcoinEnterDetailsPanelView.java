@@ -1,16 +1,16 @@
 package org.multibit.hd.ui.views.wizards.request_bitcoin;
 
-import org.bitcoinj.core.Coin;
-import org.bitcoinj.uri.BitcoinURI;
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import net.miginfocom.swing.MigLayout;
+import org.bitcoinj.core.Coin;
+import org.bitcoinj.uri.BitcoinURI;
 import org.joda.time.DateTime;
 import org.multibit.hd.core.dto.FiatPayment;
-import org.multibit.hd.core.dto.PaymentRequestData;
+import org.multibit.hd.core.dto.MBHDPaymentRequestData;
 import org.multibit.hd.core.dto.WalletSummary;
+import org.multibit.hd.core.error_reporting.ExceptionHandler;
 import org.multibit.hd.core.events.ExchangeRateChangedEvent;
-import org.multibit.hd.core.exceptions.ExceptionHandler;
 import org.multibit.hd.core.exceptions.PaymentsSaveException;
 import org.multibit.hd.core.exchanges.ExchangeKey;
 import org.multibit.hd.core.managers.InstallationManager;
@@ -67,15 +67,21 @@ public class RequestBitcoinEnterDetailsPanelView extends AbstractWizardPanelView
 
   private JTextField transactionLabel;
   private JLabel addressCommentLabel;
+  private JLabel gapLimitLabel;
 
   private JButton showQRCode;
+
+  /**
+   * A boolean indicating that the wallet is currently at the gap limit and hence is recycling an existing address
+   */
+  private boolean atGapLimit = false;
 
   /**
    * @param wizard The wizard managing the states
    */
   public RequestBitcoinEnterDetailsPanelView(AbstractWizard<RequestBitcoinWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.REQUEST_BITCOIN_TITLE, AwesomeIcon.CLOUD_DOWNLOAD);
+    super(wizard, panelName, AwesomeIcon.CLOUD_DOWNLOAD, MessageKey.REQUEST_BITCOIN_TITLE);
 
   }
 
@@ -93,15 +99,37 @@ public class RequestBitcoinEnterDetailsPanelView extends AbstractWizardPanelView
         passwordParameter = Optional.of(password);
       }
     }
-    // Get the next receiving address from the wallet service
-    String nextAddress = CoreServices.getCurrentWalletService().get().generateNextReceivingAddress(passwordParameter);
+    // Get the next receiving address to show from the wallet service.
+    // This is normally a new receiving address but if the gap limit is reached it is the current one
+    WalletService walletService;
+    if (CoreServices.getCurrentWalletService().isPresent()) {
+      walletService = CoreServices.getCurrentWalletService().get();
+    } else {
+      if (WalletManager.INSTANCE.getCurrentWalletSummary().isPresent()) {
+        walletService = CoreServices.getOrCreateWalletService(WalletManager.INSTANCE.getCurrentWalletSummary().get().getWalletId());
+      } else {
+        throw new IllegalStateException("Cannot create WalletService to create a new address");
+      }
+    }
 
-    // Recreate bloom filter
-    BitcoinNetworkService bitcoinNetworkService = CoreServices.getOrCreateBitcoinNetworkService();
-    Preconditions.checkState(bitcoinNetworkService.isStartedOk(), "'bitcoinNetworkService' should be started OK");
-    bitcoinNetworkService.recalculateFastCatchupAndFilter();
+    String nextAddressToShow;
 
-    displayBitcoinAddressMaV = Components.newDisplayBitcoinAddressMaV(nextAddress);
+    Optional<Integer> gap = walletService.getGap();
+    log.debug("current gap: {}", gap);
+    atGapLimit = gap.isPresent() && gap.get() >= WalletService.GAP_LIMIT;
+
+    if (atGapLimit) {
+      nextAddressToShow = walletService.getLastGeneratedReceivingAddress();
+    } else {
+      nextAddressToShow = walletService.generateNextReceivingAddress(passwordParameter);
+
+      // Recreate bloom filter
+      BitcoinNetworkService bitcoinNetworkService = CoreServices.getOrCreateBitcoinNetworkService();
+      Preconditions.checkState(bitcoinNetworkService.isStartedOk(), "'bitcoinNetworkService' should be started OK");
+      bitcoinNetworkService.recalculateFastCatchupAndFilter();
+    }
+
+    displayBitcoinAddressMaV = Components.newDisplayBitcoinAddressMaV(nextAddressToShow);
 
     // Create the QR code display
     displayQRCodePopoverMaV = Popovers.newDisplayQRCodePopoverMaV(getPanelName());
@@ -109,6 +137,8 @@ public class RequestBitcoinEnterDetailsPanelView extends AbstractWizardPanelView
     transactionLabel = TextBoxes.newEnterQRCodeLabel();
     showQRCode = Buttons.newQRCodeButton(getShowQRCodePopoverAction());
     addressCommentLabel = Labels.newLabel(MessageKey.ONE_OF_YOUR_ADDRESSES);
+    gapLimitLabel = Labels.newNoteLabel(MessageKey.AT_GAP_LIMIT, null);
+    gapLimitLabel.setVisible(atGapLimit);
 
     // User entered text
     notesTextArea = TextBoxes.newEnterPrivateNotes(getWizardModel(), MultiBitUI.RECEIVE_ADDRESS_LABEL_LENGTH);
@@ -126,7 +156,6 @@ public class RequestBitcoinEnterDetailsPanelView extends AbstractWizardPanelView
 
     // Register components
     registerComponents(enterAmountMaV, displayBitcoinAddressMaV, displayQRCodePopoverMaV);
-
   }
 
   @Override
@@ -142,8 +171,13 @@ public class RequestBitcoinEnterDetailsPanelView extends AbstractWizardPanelView
     contentPanel.add(Labels.newRecipient());
     contentPanel.add(displayBitcoinAddressMaV.getView().newComponentPanel(), "growx,push");
     contentPanel.add(showQRCode, "wrap");
+
     contentPanel.add(Labels.newBlankLabel());
     contentPanel.add(addressCommentLabel, "wrap");
+
+    contentPanel.add(Labels.newBlankLabel());
+    contentPanel.add(gapLimitLabel, "wrap");
+
     contentPanel.add(Labels.newQRCodeLabel());
     contentPanel.add(transactionLabel, "span 2,wrap");
     contentPanel.add(Labels.newNotes());
@@ -168,12 +202,7 @@ public class RequestBitcoinEnterDetailsPanelView extends AbstractWizardPanelView
   @Override
   public void afterShow() {
 
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        enterAmountMaV.getView().requestInitialFocus();
-      }
-    });
+    enterAmountMaV.getView().requestInitialFocus();
 
   }
 
@@ -198,12 +227,12 @@ public class RequestBitcoinEnterDetailsPanelView extends AbstractWizardPanelView
     Preconditions.checkNotNull(walletService, "'walletService' must be present");
     Preconditions.checkState(WalletManager.INSTANCE.getCurrentWalletSummary().isPresent(), "'currentWalletSummary' must be present");
 
-    final PaymentRequestData paymentRequestData = new PaymentRequestData();
-    paymentRequestData.setNote(notesTextArea.getText());
-    paymentRequestData.setDate(DateTime.now());
-    paymentRequestData.setAddress(Addresses.parse(displayBitcoinAddressMaV.getModel().getValue()).get());
-    paymentRequestData.setLabel(transactionLabel.getText());
-    paymentRequestData.setAmountCoin(enterAmountMaV.getModel().getCoinAmount());
+    final MBHDPaymentRequestData MBHDPaymentRequestData = new MBHDPaymentRequestData();
+    MBHDPaymentRequestData.setNote(notesTextArea.getText());
+    MBHDPaymentRequestData.setDate(DateTime.now());
+    MBHDPaymentRequestData.setAddress(Addresses.parse(displayBitcoinAddressMaV.getModel().getValue()).get());
+    MBHDPaymentRequestData.setLabel(transactionLabel.getText());
+    MBHDPaymentRequestData.setAmountCoin(enterAmountMaV.getModel().getCoinAmount());
 
     final FiatPayment fiatPayment = new FiatPayment();
     fiatPayment.setAmount(enterAmountMaV.getModel().getLocalAmount());
@@ -220,12 +249,15 @@ public class RequestBitcoinEnterDetailsPanelView extends AbstractWizardPanelView
       fiatPayment.setCurrency(Optional.<Currency>absent());
     }
 
-    paymentRequestData.setAmountFiat(fiatPayment);
+    MBHDPaymentRequestData.setAmountFiat(fiatPayment);
 
-    walletService.addPaymentRequest(paymentRequestData);
+    walletService.addMBHDPaymentRequestData(MBHDPaymentRequestData);
     try {
       log.debug("Saving payment information");
-      walletService.writePayments();
+      CharSequence password = WalletManager.INSTANCE.getCurrentWalletSummary().get().getWalletPassword().getPassword();
+      if (password != null) {
+        walletService.writePayments(password);
+      }
     } catch (PaymentsSaveException pse) {
       ExceptionHandler.handleThrowable(pse);
     }
@@ -239,12 +271,12 @@ public class RequestBitcoinEnterDetailsPanelView extends AbstractWizardPanelView
 
     final WalletSummary walletSummary = WalletManager.INSTANCE.getCurrentWalletSummary().get();
 
-    ContactService contactService = CoreServices.getOrCreateContactService(walletSummary.getWalletId());
+    ContactService contactService = CoreServices.getOrCreateContactService(walletSummary.getWalletPassword());
 
     walletDetail.setApplicationDirectory(applicationDataDirectory.getAbsolutePath());
     walletDetail.setWalletDirectory(walletFile.getParentFile().getName());
     walletDetail.setNumberOfContacts(contactService.allContacts().size());
-    walletDetail.setNumberOfPayments(walletService.getPaymentDataList().size());
+    walletDetail.setNumberOfPayments(walletService.getPaymentDataSetSize());
 
     log.debug("A new receiving address has been issued. The number of external keys is now {}", walletSummary.getWallet().getActiveKeychain().getIssuedExternalKeys());
 
@@ -276,25 +308,30 @@ public class RequestBitcoinEnterDetailsPanelView extends AbstractWizardPanelView
 
       @Override
       public void actionPerformed(ActionEvent e) {
+        if (Panels.isLightBoxPopoverShowing()) {
+          // Hide the popover being shown
+          Panels.hideLightBoxPopoverIfPresent();
+        } else {
+          // Show the QR code popover
+          RequestBitcoinEnterDetailsPanelModel model = getPanelModel().get();
 
-        RequestBitcoinEnterDetailsPanelModel model = getPanelModel().get();
+          String bitcoinAddress = model.getDisplayBitcoinAddressModel().getValue();
+          Optional<Coin> coin = model.getEnterAmountModel().getCoinAmount();
 
-        String bitcoinAddress = model.getDisplayBitcoinAddressModel().getValue();
-        Coin coin = model.getEnterAmountModel().getCoinAmount();
+          // Form a Bitcoin URI from the contents
+          String bitcoinUri = BitcoinURI.convertToBitcoinURI(
+                  bitcoinAddress,
+                  coin.isPresent() ? coin.get() : null,
+                  transactionLabel.getText(),
+                  null
+          );
 
-        // Form a Bitcoin URI from the contents
-        String bitcoinUri = BitcoinURI.convertToBitcoinURI(
-          bitcoinAddress,
-          coin,
-          transactionLabel.getText(),
-          null
-        );
+          displayQRCodePopoverMaV.getModel().setValue(bitcoinUri);
+          displayQRCodePopoverMaV.getModel().setTransactionLabel(transactionLabel.getText());
 
-        displayQRCodePopoverMaV.getModel().setValue(bitcoinUri);
-        displayQRCodePopoverMaV.getModel().setTransactionLabel(transactionLabel.getText());
-
-        // Show the QR code as a popover
-        Panels.showLightBoxPopover(displayQRCodePopoverMaV.getView().newComponentPanel());
+          // Show the QR code as a popover
+          Panels.showLightBoxPopover(displayQRCodePopoverMaV.getView().newComponentPanel());
+        }
       }
 
     };

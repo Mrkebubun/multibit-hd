@@ -1,30 +1,58 @@
+
 Build status: [![Build Status](https://travis-ci.org/bitcoin-solutions/multibit-hd.png?branch=develop)](https://travis-ci.org/bitcoin-solutions/multibit-hd)
 
-Coverage status: [![Coverage Status](https://img.shields.io/coveralls/bitcoin-solutions/multibit-hd.svg)](https://coveralls.io/r/bitcoin-solutions/multibit-hd)
-
-Project status: Private beta. Expect minor bugs and API changes. Not suitable for production, but early adopter developers and early testers should get on board.
+Project status: Pre-release. Expect minor bugs and UI adjustments. Suitable for small scale production.
 
 ### MultiBit HD (MBHD)
 
-A desktop Hierarchical Deterministic Wallet (HDW) for Bitcoin using the Simplified Payment Verification (SPV) mode to provide very fast blockchain synchronization.
+A desktop Hierarchical Deterministic Wallet (HDW) for Bitcoin using the Simplified Payment Verification (SPV) mode to provide very fast block chain synchronization.
 
 The target audience is "international mainstream" which compels the user interface to remain as simple and consistent as possible while still retaining advanced capabilities
 under the covers.
 
 Support for external hardware wallets (such as the Trezor) is [available through the MultiBit Hardware project](https://github.com/bitcoin-solutions/mbhd-hardware).
 
+### Main website
+
+Pre-packaged installers are available from the [MultiBit website](https://beta.multibit.org).
+
 ### Technologies
 
 * Java 7 and Swing
 * [Bitcoinj](https://github.com/bitcoinj/bitcoinj) - Providing various Bitcoin protocol utilities (GitHub is the reference)
-* [Java HID API](https://code.google.com/p/javahidapi/) - Java library providing USB Human Interface Device (HID) native interface
+* [hid4java](https://github.com/gary-rowe/hid4java) - Java library providing USB Human Interface Device (HID) native interface
+* [MultiBit Hardware](https://github.com/bitcoin-solutions/multibit-hardware) - Java library providing Trezor support
 * [Google Protocol Buffers](https://code.google.com/p/protobuf/) (protobuf) - For use with serialization and hardware communications
 * [Font Awesome](http://fortawesome.github.io/Font-Awesome/) - for iconography
-* [JWrapper](http://www.jwrapper.com/) - for a smooth installation and update process
+* [Install4j](https://www.ej-technologies.com/download/install4j/files) - for a smooth installation and update process
 
 ### Getting started
 
-MultiBit HD is a standard Maven build, but currently relies on some snapshot builds of libraries which aren't available in Maven Central.
+MultiBit HD is a standard Maven build from a GitHub repository and currently relies on some builds of libraries which aren't available in Maven Central.
+
+Below are some basic instructions for developers - there is [more information in the MultiBit HD wiki](https://github.com/bitcoin-solutions/multibit-hd/wiki).
+
+#### Verify you have Git
+
+```
+$ git --version
+```
+
+[Install git](https://help.github.com/articles/set-up-git/) if necessary.
+
+Then, if this is your first time working with MultiBit HD source code, clone the source code repository (over HTTPS) using:
+
+```
+$ git clone https://github.com/bitcoin-solutions/multibit-hd.git
+```
+A sub-directory called `multibit-hd` will be created which is your project root directory.
+
+To update a previous clone of MultiBit HD use a pull instead:
+
+```
+$ cd <project root>
+$ git pull
+```
 
 #### Verify you have Maven 3+
 
@@ -37,15 +65,24 @@ To quickly check that you have Maven 3+ installed check on the command line:
 ```
 $ mvn --version
 ```
+Maven uses a file called `pom.xml` present in the MultiBit HD source code project directory to provide all the build information.
 
 #### We currently use a forked version of Bitcoinj
 
-The [MultiBit Staging repository](https://github.com/bitcoin-solutions/mbhd-maven) contains a `bitcoinj-0.12-alice` 
-and supporting Orchid JAR for TOR that is aligned with the MultiBit HD `develop` branch. This should be used for 
+The [MultiBit Staging repository](https://github.com/bitcoin-solutions/mbhd-maven) contains a fork of the bitcoinj library
+and its supporting Orchid JAR for Tor that is aligned with the MultiBit HD `develop` branch. This should be used for
 development builds and is suitable for production. As we make changes to our fork we update the staging repository. 
 
-Wherever possible we will introduce our forked changes as a pull request into the upstream bitcoinj so that other 
-projects can benefit but we must use a fork to ensure rapid updates are possible during development.
+Our release cycle is different to that of bitcoinj and our version reflects as accurately as we can the state of play
+when the bitcoinj fork code was frozen. For example `bitcoinj-0.13-SNAPSHOT-alice-0.0.9` should be interpreted as
+"a snapshot of upstream bitcoinj 0.13 that has additional code (alice) that is released under version 0.0.9".
+
+Deeper analysis of the actual git upstream can be seen through the tagging of the `master` branch.
+
+Wherever possible, and time permitting, we will introduce our forked changes as a pull request into the upstream bitcoinj
+so that other projects can benefit but we must use a fork to ensure rapid updates are possible during development.
+
+Anyone wishing to handle this part of the process is very welcome to offer up their assistance!
 
 #### Start the application (from an IDE)
 
@@ -53,15 +90,17 @@ To run the application within an IDE, simply execute `MultiBitHD.main()` in the 
 
 #### Start the application (from the command line)
 
-To run the application from the command line, first build from the project root directory:
+To run the application from the command line, first build from the project root directory (pulling in all sources from upstream):
 ```
-$ mvn clean install
+$ cd <project root>
+$ mvn clean dependency:sources install
 ```
 then start the application using the shaded JAR:
 ```
 $ java -jar mbhd-swing/target/multibit-hd.jar
 ```
-No command line parameters are needed, although a Bitcoin URI is accepted (the quotes are required to avoid URL decoding):
+No command line parameters are needed, although BIP 21 and BIP 72 Bitcoin URIs are accepted. In the example below a BIP 21 Bitcoin URI
+is presented, the quotes are required to avoid URL decoding:
 ```
 $ java -jar mbhd-swing/target/multibit-hd.jar "bitcoin:1AhN6rPdrMuKBGFDKR1k9A8SCLYaNgXhty?amount=0.01&label=Please%20donate%20to%20multibit.org"
 ```
@@ -101,7 +140,7 @@ At the time MBHD was being written (Q4 2013 - Q2 2014) Java 8 was not in product
 Classic and 3x the standard Java 7 packaged footprints). That footprint alone would be sufficient to dramatically increase the cost of serving the application and deter people
 from downloading in countries where bandwidth is less available.
 
-We will revisit this once we have suitable compressed JWrapper JREs available.
+We will revisit this once we have suitable Install4j JREs available. We expect this to occur shortly after [Release 0.1](https://github.com/bitcoin-solutions/multibit-hd/milestones).
 
 #### Why not JavaFX ?
 
@@ -109,8 +148,8 @@ JavaFX was only available as version 2.2 on Java 7 and the move to Java 8 was no
 fixed in Java 8:
 
 * no right to left languages (Hebrew, Farsi, Arabic, etc)
-* no integration with native platform for Bitcoin URI protocol handling
-* no reporting uncaught exceptions
+* no integration with native platform for Bitcoin URI protocol handling (no BIP 21 or 72 support)
+* no reporting uncaught exceptions (no error reporting)
 
 Thus this technology was not suitable for the very wide range of people using MultiBit in all corners of the globe.
 
@@ -122,7 +161,7 @@ pre-date 2009 making it much harder for [dependency chain attacks](http://gary-r
 
 With some effort Swing can be made to look quite modern.
 
-Swing also allows us to smoothly integrate with the native platform which puts it ahead of JavaFX until at least Q4 2014.
+Swing also allows us to smoothly integrate with the native platform which puts it ahead of JavaFX until at least Q3 2015.
 
 #### Why not SwingX ?
 
@@ -143,7 +182,7 @@ Using Nimbus ensures that we don't have this or similar problems.
 
 Installers lag the latest changes by a few weeks. You can find them on the [MultiBit HD website](https://www.multibit.org/releases/multibit-hd).
 
-As new changes are released they will update automatically from 0.0.4 (Private Beta 4) onwards.
+As new changes are released they will update automatically over HTTPS from 0.0.4 (Private Beta 4) onwards.
 
 #### Is there a developer wiki ?
 

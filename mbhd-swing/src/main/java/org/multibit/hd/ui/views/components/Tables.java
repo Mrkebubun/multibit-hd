@@ -1,13 +1,13 @@
 package org.multibit.hd.ui.views.components;
 
-import org.bitcoinj.core.Coin;
+import com.google.common.base.Optional;
 import com.google.common.collect.Lists;
+import org.bitcoinj.core.Coin;
 import org.joda.time.DateTime;
 import org.multibit.hd.core.dto.*;
 import org.multibit.hd.ui.languages.MessageKey;
 import org.multibit.hd.ui.views.components.renderers.AmountBTCTableHeaderRenderer;
 import org.multibit.hd.ui.views.components.tables.ContactTableModel;
-import org.multibit.hd.ui.views.components.tables.HistoryTableModel;
 import org.multibit.hd.ui.views.components.tables.PaymentTableModel;
 import org.multibit.hd.ui.views.components.tables.StripedTable;
 
@@ -18,6 +18,7 @@ import javax.swing.table.TableModel;
 import javax.swing.table.TableRowSorter;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 
 import static org.multibit.hd.ui.MultiBitUI.*;
 
@@ -97,7 +98,7 @@ public class Tables {
    *
    * @return A new "payments" striped table
    */
-  public static StripedTable newPaymentsTable(List<PaymentData> paymentData, JButton enterButton) {
+  public static StripedTable newPaymentsTable(Set<PaymentData> paymentData, JButton enterButton) {
 
     PaymentTableModel model = new PaymentTableModel(paymentData);
 
@@ -121,7 +122,7 @@ public class Tables {
     // Type column
     TableColumn typeTableColumn = table.getColumnModel().getColumn(PaymentTableModel.TYPE_COLUMN_INDEX);
     typeTableColumn.setCellRenderer(Renderers.newPaymentTypeRenderer());
-    resizeColumn(table, PaymentTableModel.TYPE_COLUMN_INDEX, 100, 120);
+    resizeColumn(table, PaymentTableModel.TYPE_COLUMN_INDEX, 120, 150);
 
     // Amount BTC column
     TableColumn column = table.getColumnModel().getColumn(PaymentTableModel.AMOUNT_BTC_COLUMN_INDEX);
@@ -165,66 +166,12 @@ public class Tables {
     rowSorter.setComparator(PaymentTableModel.TYPE_COLUMN_INDEX, comparatorPaymentType);
 
     // Comparator for amount BTC
-    Comparator<Coin> comparatorCoin = newCoinComparator();
-    rowSorter.setComparator(PaymentTableModel.AMOUNT_BTC_COLUMN_INDEX, comparatorCoin);
+    Comparator<Optional> comparatorCoinOptional = newOptionalCoinComparator();
+    rowSorter.setComparator(PaymentTableModel.AMOUNT_BTC_COLUMN_INDEX, comparatorCoinOptional);
 
     // Comparator for amount fiat
     Comparator<FiatPayment> comparatorFiatPayment = newFiatPaymentComparator();
     rowSorter.setComparator(PaymentTableModel.AMOUNT_FIAT_COLUMN_INDEX, comparatorFiatPayment);
-
-    justifyColumnHeaders(table);
-
-    return table;
-  }
-
-  /**
-   * @param historyEntries The history entries to show
-   * @param enterButton The button to be pressed on "Enter" or double click
-   *
-   * @return A new "contacts" striped table
-   */
-  public static StripedTable newHistoryTable(List<HistoryEntry> historyEntries, JButton enterButton) {
-
-    HistoryTableModel model = new HistoryTableModel(historyEntries);
-
-    StripedTable table = new StripedTable(model);
-
-    // Ensure it is accessible
-    AccessibilityDecorator.apply(table, MessageKey.HISTORY);
-
-    TableDecorator.applyScreenTheme(table, enterButton);
-
-    // Checkbox column
-    TableColumn checkBoxTableColumn = table.getColumnModel().getColumn(HistoryTableModel.CHECKBOX_COLUMN_INDEX);
-    checkBoxTableColumn.setCellRenderer(Renderers.newCheckboxRenderer());
-    resizeColumn(table, HistoryTableModel.CHECKBOX_COLUMN_INDEX, NORMAL_ICON_SIZE + TABLE_SPACER);
-
-    // Date column
-    TableColumn dateTableColumn = table.getColumnModel().getColumn(HistoryTableModel.CREATED_COLUMN_INDEX);
-    dateTableColumn.setCellRenderer(Renderers.newTrailingJustifiedDateRenderer());
-    resizeColumn(table, HistoryTableModel.CREATED_COLUMN_INDEX, 150, 200);
-
-    // Description column
-    TableColumn descriptionTableColumn = table.getColumnModel().getColumn(HistoryTableModel.DESCRIPTION_COLUMN_INDEX);
-    descriptionTableColumn.setCellRenderer(Renderers.newLeadingJustifiedStringRenderer());
-
-    resizeColumn(table, HistoryTableModel.DESCRIPTION_COLUMN_INDEX, HUGE_ICON_SIZE + TABLE_SPACER);
-
-    // Notes column
-    TableColumn notesTableColumn = table.getColumnModel().getColumn(HistoryTableModel.NOTES_COLUMN_INDEX);
-    notesTableColumn.setCellRenderer(Renderers.newLeadingJustifiedStringRenderer());
-
-    // Row sorter for date
-    TableRowSorter<TableModel> rowSorter = new TableRowSorter<>(table.getModel());
-    table.setRowSorter(rowSorter);
-
-    // Sort by date descending
-    List<TableRowSorter.SortKey> sortKeys = Lists.newArrayList();
-    sortKeys.add(new TableRowSorter.SortKey(HistoryTableModel.CREATED_COLUMN_INDEX, SortOrder.DESCENDING));
-    rowSorter.setSortKeys(sortKeys);
-
-    Comparator<DateTime> comparator = newDateTimeComparator();
-    rowSorter.setComparator(HistoryTableModel.CREATED_COLUMN_INDEX, comparator);
 
     justifyColumnHeaders(table);
 
@@ -273,21 +220,48 @@ public class Tables {
   }
 
   /**
-   * @return A new Coin comparator for use with a TableRowSorter
+   * @return A new Optional-of-Coin comparator for use with a TableRowSorter
    */
-  private static Comparator<Coin> newCoinComparator() {
+  private static Comparator<Optional> newOptionalCoinComparator() {
 
-    return new Comparator<Coin>() {
+    return new Comparator<Optional>() {
 
       @Override
-      public int compare(Coin o1, Coin o2) {
+      public int compare(Optional o1, Optional o2) {
+        if (o1 == null) {
+          if (o2 == null) {
+            return 0;
+          } else {
+            return -1;
+          }
+        } else {
+          if (o2 == null) {
+            return 1;
+          }
 
-        if (o1 != null && o2 == null) {
-          return 1;
+          // Both not null
+          boolean present1 = o1.isPresent();
+          boolean present2 = o2.isPresent();
+
+          if (present1) {
+            if (present2) {
+              // Both present
+              if (o1.get() instanceof Coin && o2.get() instanceof Coin) {
+                return ((Coin) o1.get()).compareTo((Coin) o2.get());
+              } else {
+                return 0; // All none Coins are equal
+              }
+            } else {
+              return 1;
+            }
+          } else {
+            if (present2) {
+              return -1;
+            } else {
+              return 0;
+            }
+          }
         }
-
-        return o1 != null ? o1.compareTo(o2) : 0;
-
       }
     };
   }
@@ -353,9 +327,8 @@ public class Tables {
    * @param preferredWidth The preferred width
    */
   private static void resizeColumn(StripedTable table, int columnIndex, int preferredWidth) {
-
-    resizeColumn(table, columnIndex, preferredWidth, preferredWidth);
-
+    String id = table.getColumnName(columnIndex);
+    table.getColumn(id).setPreferredWidth(preferredWidth);
   }
 
   /**
@@ -367,10 +340,8 @@ public class Tables {
    * @param maxWidth       The maximum width
    */
   private static void resizeColumn(StripedTable table, int columnIndex, int preferredWidth, int maxWidth) {
-
     String id = table.getColumnName(columnIndex);
     table.getColumn(id).setPreferredWidth(preferredWidth);
     table.getColumn(id).setMaxWidth(maxWidth);
-
   }
 }

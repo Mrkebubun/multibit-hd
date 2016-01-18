@@ -47,7 +47,12 @@ public class DarkTheme extends BaseTheme {
 
   @Override
   public Color buttonBackground() {
-    return new Color(90, 90, 90);
+    return new Color(130, 130, 130);
+  }
+
+  @Override
+  public Color buttonDefaultBackground() {
+    return new Color(0,151,50);
   }
 
   @Override
@@ -72,12 +77,17 @@ public class DarkTheme extends BaseTheme {
 
   @Override
   public Color sidebarSelectedText() {
-    return new Color(240, 211, 85);
+    return new Color(66,139,202); // Must contrast with dataEntryBackground
   }
 
   @Override
   public Color dataEntryBackground() {
     return new Color(240, 211, 85);
+  }
+
+  @Override
+  public Color dataEntryText() {
+    return inverseText();
   }
 
   @Override
@@ -116,6 +126,11 @@ public class DarkTheme extends BaseTheme {
   }
 
   @Override
+  public Color buttonFadedText() {
+    return new Color(210, 210, 210);
+  }
+
+  @Override
   public Color successAlertText() {
     return inverseText();
   }
@@ -134,7 +149,7 @@ public class DarkTheme extends BaseTheme {
     );
 
     // Any of 28, 30, 31, 32
-    return painter.color31;
+    return painter.alertFadedBackground;
   }
 
 
@@ -188,7 +203,7 @@ public class DarkTheme extends BaseTheme {
     );
 
     // Any of 28, 30, 31, 32
-    return painter.color31;
+    return painter.alertFadedBackground;
   }
 
   @Override
@@ -214,7 +229,7 @@ public class DarkTheme extends BaseTheme {
     );
 
     // Any of 28, 30, 31, 32
-    return painter.color31;
+    return painter.alertFadedBackground;
   }
 
   @Override

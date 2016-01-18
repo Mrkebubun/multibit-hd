@@ -11,18 +11,19 @@ import com.xeiam.xchange.ExchangeFactory;
 import com.xeiam.xchange.NotAvailableFromExchangeException;
 import com.xeiam.xchange.currency.CurrencyPair;
 import com.xeiam.xchange.dto.marketdata.Ticker;
-import org.multibit.hd.core.concurrent.SafeExecutors;
+import org.multibit.commons.concurrent.SafeExecutors;
+import org.multibit.commons.utils.Dates;
 import org.multibit.hd.core.config.BitcoinConfiguration;
 import org.multibit.hd.core.config.Configurations;
+import org.multibit.hd.core.dto.EnvironmentSummary;
 import org.multibit.hd.core.dto.ExchangeSummary;
-import org.multibit.hd.core.dto.SecuritySummary;
 import org.multibit.hd.core.events.CoreEvents;
 import org.multibit.hd.core.events.ShutdownEvent;
 import org.multibit.hd.core.exchanges.ExchangeKey;
 import org.multibit.hd.core.utils.CurrencyUtils;
-import org.multibit.hd.core.utils.Dates;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import si.mazi.rescu.HttpStatusIOException;
 
 import javax.net.ssl.SSLHandshakeException;
 import java.io.IOException;
@@ -60,7 +61,7 @@ public class ExchangeTickerService extends AbstractService {
   /**
    * The executor service for managing one off dynamic "all currency" lookups against exchanges
    */
-  final ListeningExecutorService allCurrenciesExecutorService = SafeExecutors.newSingleThreadExecutor("all-currencies");
+  private volatile ListeningExecutorService allCurrenciesExecutorService = null;
   private ListeningExecutorService latestTickerExecutorService = SafeExecutors.newSingleThreadExecutor("latest-ticker");
 
   /**
@@ -157,26 +158,40 @@ public class ExchangeTickerService extends AbstractService {
                   // The exchange may have changed their currency offerings
                   log.warn("Exchange '{}' reported a currency error: {}", exchangeKey.getExchangeName(), t.getMessage());
                   CoreEvents.fireExchangeStatusChangedEvent(ExchangeSummary.newExchangeError(exchangeKey.getExchangeName(), t.getMessage()));
+                  return;
                 }
 
                 if (t instanceof NotAvailableFromExchangeException) {
                   // The exchange is unable to service this request
                   log.warn("Exchange '{}' reported a 'not available from exchange' error: {}", exchangeKey.getExchangeName(), t.getMessage());
                   CoreEvents.fireExchangeStatusChangedEvent(ExchangeSummary.newExchangeError(exchangeKey.getExchangeName(), t.getMessage()));
+                  return;
+                }
+
+
+                if (t instanceof HttpStatusIOException) {
+                   // The exchange did not return an HTTP OK
+                   log.warn("Exchange '{}' reported an HTTP error : {}", exchangeKey.getExchangeName(), t.getMessage());
+                   CoreEvents.fireExchangeStatusChangedEvent(ExchangeSummary.newExchangeError(exchangeKey.getExchangeName(), t.getMessage()));
+                   return;
                 }
 
                 if (t instanceof UnknownHostException) {
                   // The exchange is either down or we have no network connection
                   log.warn("Exchange '{}' reported an unknown host error: {}", exchangeKey.getExchangeName(), t.getMessage());
                   CoreEvents.fireExchangeStatusChangedEvent(ExchangeSummary.newExchangeDown(exchangeKey.getExchangeName(), t.getMessage()));
+                  return;
                 }
 
                 if (t instanceof SSLHandshakeException) {
                   // The exchange is not presenting a valid SSL certificate - treat as down
                   log.warn("Exchange '{}' reported an SSL error: {}", exchangeKey.getExchangeName(), t.getMessage());
                   CoreEvents.fireExchangeStatusChangedEvent(ExchangeSummary.newExchangeDown(exchangeKey.getExchangeName(), t.getMessage()));
+                  return;
                 }
 
+                // Log the error internally but don't fire an event
+                log.warn("Exchange '{}' reported an error: {}", exchangeKey.getExchangeName(), t.getClass().getCanonicalName() + " " + t.getMessage());
               }
             }
           );
@@ -198,7 +213,9 @@ public class ExchangeTickerService extends AbstractService {
 
       case HARD:
       case SOFT:
-        allCurrenciesExecutorService.shutdownNow();
+        if (allCurrenciesExecutorService != null) {
+          allCurrenciesExecutorService.shutdownNow();
+        }
         latestTickerExecutorService.shutdownNow();
 
         // Allow ongoing cleanup
@@ -217,8 +234,6 @@ public class ExchangeTickerService extends AbstractService {
    * @return The future ticker for wrapping with <code>Futures.addCallback</code>
    */
   public ListenableFuture<Ticker> latestTicker() {
-
-
     // Apply any exchange quirks to the counter code (e.g. ISO "RUB" -> legacy "RUR")
     final String exchangeCounterCode = ExchangeKey.exchangeCode(localCurrency.getCurrencyCode(), exchangeKey);
     final String exchangeBaseCode = ExchangeKey.exchangeCode("XBT", exchangeKey);
@@ -314,6 +329,9 @@ public class ExchangeTickerService extends AbstractService {
    * @return All the currencies supported by the exchange
    */
   public ListenableFuture<String[]> allCurrencies() {
+    if (allCurrenciesExecutorService == null) {
+      allCurrenciesExecutorService = SafeExecutors.newSingleThreadExecutor("all-currencies");
+    }
 
     return allCurrenciesExecutorService.submit(
       new Callable<String[]>() {
@@ -333,7 +351,7 @@ public class ExchangeTickerService extends AbstractService {
             currencyPairs = exchange.get().getPollingMarketDataService().getExchangeSymbols();
           } catch (SSLHandshakeException e) {
             // Inform the user of a serious problem with current certificates
-            CoreEvents.fireSecurityEvent(SecuritySummary.newCertificateFailed());
+            CoreEvents.fireEnvironmentEvent(EnvironmentSummary.newCertificateFailed());
             // Trigger the failure handler
             throw new IllegalStateException(e.getMessage(), e);
           }

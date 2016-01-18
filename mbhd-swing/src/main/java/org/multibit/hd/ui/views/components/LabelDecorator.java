@@ -15,6 +15,8 @@ import org.multibit.hd.ui.utils.HtmlUtils;
 import org.multibit.hd.ui.views.fonts.AwesomeDecorator;
 import org.multibit.hd.ui.views.fonts.AwesomeIcon;
 import org.multibit.hd.ui.views.themes.Themes;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 import java.awt.*;
@@ -28,6 +30,8 @@ import java.awt.*;
  * @since 0.0.1
  */
 public class LabelDecorator {
+
+  private static final Logger log = LoggerFactory.getLogger(LabelDecorator.class);
 
   /**
    * Utilities have no public constructor
@@ -203,12 +207,18 @@ public class LabelDecorator {
    *
    * @param label               The label to decorate
    * @param reportMessageKey    The report message key (if not present then label is not visible)
+   * @param values              The values for the message key
    * @param reportMessageStatus The status (true then label has a check mark otherwise a cross)
    */
-  public static void applyReportMessage(JLabel label, Optional<MessageKey> reportMessageKey, boolean reportMessageStatus) {
+  public static void applyReportMessage(JLabel label, Optional<MessageKey> reportMessageKey, Object[] values, boolean reportMessageStatus) {
+
+    // Could an attempt to update an uninitialised wizard label
+    if (label == null) {
+      return;
+    }
 
     if (reportMessageKey.isPresent()) {
-      label.setText(Languages.safeText(reportMessageKey.get()));
+      label.setText(Languages.safeText(reportMessageKey.get(), values));
       AccessibilityDecorator.apply(
         label,
         reportMessageKey.get()
@@ -255,6 +265,5 @@ public class LabelDecorator {
         AwesomeDecorator.bindIcon(AwesomeIcon.TIMES, statusLabel, true, MultiBitUI.NORMAL_ICON_SIZE);
       }
     }
-
   }
 }

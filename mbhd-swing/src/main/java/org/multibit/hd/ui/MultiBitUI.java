@@ -18,9 +18,9 @@ public interface MultiBitUI {
    */
   int UI_MIN_WIDTH = 900;
   /**
-   * The minimum height for the application UI (550 is the minimum)
+   * The minimum height for the application UI (600 is the minimum to avoid an occluded status bar on Windows)
    */
-  int UI_MIN_HEIGHT = 550;
+  int UI_MIN_HEIGHT = 600;
 
   /**
    * The minimum width for a wizard panel (600 is about right) allowing for popovers
@@ -85,6 +85,16 @@ public interface MultiBitUI {
    */
   String TREZOR_DISPLAY_MAX_WIDTH_MIG = "w 150";
 
+  /**
+   * A width constraint to avoid text overflow in wizards showing KeepKey device screens
+   */
+  String KEEPKEY_DISPLAY_MAX_WIDTH_MIG = "w 300";
+
+  /**
+   * A width constraint to avoid text overflow in alert bars showing long messages (e.g. Payment Requests)
+   */
+  String ALERT_MESSAGE_MAX_WIDTH_MIG = "wmax 100%-200px";
+
   // Corners
 
   /**
@@ -114,6 +124,11 @@ public interface MultiBitUI {
   float BALANCE_HEADER_NORMAL_FONT_SIZE = 20.0f;
 
   /**
+   * Balance header small font
+   */
+  float BALANCE_HEADER_SMALL_FONT_SIZE = 18.0f;
+
+  /**
    * Transaction large font (e.g. send bitcoins)
    */
   float BALANCE_TRANSACTION_LARGE_FONT_SIZE = 18.0f;
@@ -123,18 +138,9 @@ public interface MultiBitUI {
   float BALANCE_TRANSACTION_NORMAL_FONT_SIZE = 14.0f;
 
   /**
-   * Fee large font (e.g. send bitcoins wizard)
-   */
-  float BALANCE_FEE_LARGE_FONT_SIZE = 14.0f;
-  /**
    * Fee normal font (e.g. send bitcoins wizard)
    */
   float BALANCE_FEE_NORMAL_FONT_SIZE = 12.0f;
-
-  /**
-   * Font for the "panel close" button
-   */
-  float PANEL_CLOSE_FONT_SIZE = 28.0f;
 
   /**
    * Font size for table text

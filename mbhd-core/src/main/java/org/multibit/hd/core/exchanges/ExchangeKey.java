@@ -16,12 +16,12 @@ import com.xeiam.xchange.campbx.CampBXExchange;
 import com.xeiam.xchange.cexio.CexIOExchange;
 import com.xeiam.xchange.coinbase.CoinbaseExchange;
 import com.xeiam.xchange.cryptonit.v2.CryptonitExchange;
-import com.xeiam.xchange.cryptotrade.CryptoTradeExchange;
 import com.xeiam.xchange.hitbtc.HitbtcExchange;
 import com.xeiam.xchange.kraken.KrakenExchange;
 import com.xeiam.xchange.lakebtc.LakeBTCExchange;
 import com.xeiam.xchange.oer.OERExchange;
 import com.xeiam.xchange.okcoin.OkCoinExchange;
+import com.xeiam.xchange.virtex.v2.VirtExExchange;
 import org.multibit.hd.core.config.Configurations;
 
 /**
@@ -61,13 +61,13 @@ public enum ExchangeKey {
   BTC_E(BTCEExchange.class.getName()),
   BTC_TRADE(BTCTradeExchange.class.getName()),
   BTER(BTERExchange.class.getName()),
-  // CA_VIRTEX(VirtExExchange.class.getName()), // Out of business
+  CA_VIRTEX(VirtExExchange.class.getName()),
   CEXIO(CexIOExchange.class.getName()), // Weird GHS/NMC combo
   COINBASE(CoinbaseExchange.class.getName()), // No dynamic currency pair lookup
   // COINSETTER(CoinSetterExchange.class.getName()),// No 2.1.0 release
   // COINFLOOR(CoinfloorExchange.class.getName()), // Requires non-trivial registration
   CRYPTONIT(CryptonitExchange.class.getName()),
-  CRYPTO_TRADE(CryptoTradeExchange.class.getName()),
+  // CRYPTO_TRADE(CryptoTradeExchange.class.getName()), // Out of business
   //CRYPTSY(CryptsyExchange.class.getName()),// Several broken currencies
   HITBTC(HitbtcExchange.class.getName()),// GBP feed broken, EUR and USD OK
   // IT_BIT(ItBitExchange.class.getName()),// No working feed

@@ -36,6 +36,10 @@ public enum LanguageKey {
    */
   AR_AR("ar_AR", IMPACT_REGULAR),
   /**
+   * Bulgarian
+   */
+  BG_BG("bg_BG", OPENSANS_SEMIBOLD),
+  /**
    * Czech
    */
   CS_CZ("cs_CZ", OPENSANS_SEMIBOLD),
@@ -123,6 +127,10 @@ public enum LanguageKey {
    * Lithuanian
    */
   LT_LT("lt_LT", OPENSANS_SEMIBOLD),
+  /**
+    * Mongolian
+    */
+  MN_MN("mn_MN", IMPACT_REGULAR),
   /**
    * Dutch
    */

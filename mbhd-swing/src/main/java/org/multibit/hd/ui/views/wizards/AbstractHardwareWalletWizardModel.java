@@ -5,10 +5,11 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListeningExecutorService;
-import org.joda.time.DateTime;
-import org.multibit.hd.core.concurrent.SafeExecutors;
+import org.multibit.commons.concurrent.SafeExecutors;
+import org.multibit.commons.utils.Dates;
+import org.multibit.hd.core.dto.WalletMode;
+import org.multibit.hd.core.services.ApplicationEventService;
 import org.multibit.hd.core.services.CoreServices;
-import org.multibit.hd.core.utils.Dates;
 import org.multibit.hd.hardware.core.HardwareWalletService;
 import org.multibit.hd.hardware.core.events.HardwareWalletEvent;
 import org.multibit.hd.ui.languages.MessageKey;
@@ -33,9 +34,14 @@ public abstract class AbstractHardwareWalletWizardModel<S> extends AbstractWizar
   private static final Logger log = LoggerFactory.getLogger(AbstractHardwareWalletWizardModel.class);
 
   /**
-   * Trezor requests have their own executor service which is shared across all wizards
+   * Hardware wallet requests have their own executor service which is shared across all hardware wizards
    */
-  protected static final ListeningExecutorService hardwareWalletRequestService = SafeExecutors.newSingleThreadExecutor("trezor-requests");
+  protected static final ListeningExecutorService hardwareWalletRequestService = SafeExecutors.newSingleThreadExecutor("hardware-requests");
+
+  /**
+   * The current wallet mode (e.g. TREZOR, KEEP_KEY etc)
+   */
+  private WalletMode walletMode;
 
   /**
    * The hardware wallet report message key
@@ -46,15 +52,26 @@ public abstract class AbstractHardwareWalletWizardModel<S> extends AbstractWizar
    */
   private boolean reportMessageStatus = false;
 
-  /**
-   * Ignore a device event occurring before this time to simplify the logic
-   * in dealing with a cancellation request followed by replacement of device
-   */
-  private DateTime ignoreHardwareWalletEventsThreshold = Dates.nowUtc();
-
   protected AbstractHardwareWalletWizardModel(S state) {
     super(state);
 
+    // Keep track of the current wallet mode
+    this.walletMode = WalletMode.of(CoreServices.getCurrentHardwareWalletService());
+
+  }
+
+  /**
+   * @return The current wallet mode from when this wizard was created
+   */
+  public WalletMode getWalletMode() {
+    return walletMode;
+  }
+
+  /**
+   * @param walletMode The new wallet mode (devices may attach/detach during wizard presentation)
+   */
+  public void setWalletMode(WalletMode walletMode) {
+    this.walletMode = walletMode;
   }
 
   /**
@@ -75,7 +92,7 @@ public abstract class AbstractHardwareWalletWizardModel<S> extends AbstractWizar
   /**
    * Handles state transition to a "device ready" panel
    *
-   * Usually this will be a "use Trezor" panel which will show a collection
+   * Usually this will be a "use hardware wallet" panel which will show a collection
    * of options to determine what happens next
    *
    * Note that an "operation failure" will reset the device back to its
@@ -130,6 +147,21 @@ public abstract class AbstractHardwareWalletWizardModel<S> extends AbstractWizar
    * @param event The hardware wallet event containing payload and context
    */
   public void showPINEntry(HardwareWalletEvent event) {
+    // Do nothing
+  }
+
+  /**
+   * Handles state transition to a "passphrase entry" panel
+   *
+   * Usually this will be an "EnterCurrentPassphrase" panel following a "Request" and the
+   * panel will show a passphrase dialog (this is currently unsupported see #4 in MultiBit Hardware)
+   *
+   * Clicking "Next" or "Unlock" will trigger the sending of passphrase to the device
+   * and subsequent state transitions
+   *
+   * @param event The hardware wallet event containing payload and context
+   */
+  public void showPassphraseEntry(HardwareWalletEvent event) {
     // Do nothing
   }
 
@@ -224,20 +256,6 @@ public abstract class AbstractHardwareWalletWizardModel<S> extends AbstractWizar
   }
 
   /**
-   * @return The instant at which a device events will be acted upon once more
-   */
-  public DateTime getIgnoreHardwareWalletEventsThreshold() {
-    return ignoreHardwareWalletEventsThreshold;
-  }
-
-  /**
-   * @param ignoreHardwareWalletEventsThreshold The instant at which a device events will be acted upon once more
-   */
-  public void setIgnoreHardwareWalletEventsThreshold(DateTime ignoreHardwareWalletEventsThreshold) {
-    this.ignoreHardwareWalletEventsThreshold = ignoreHardwareWalletEventsThreshold;
-  }
-
-  /**
    * @return The report panel view message key for the hardware wallet operation
    */
   public Optional<MessageKey> getReportMessageKey() {
@@ -282,13 +300,13 @@ public abstract class AbstractHardwareWalletWizardModel<S> extends AbstractWizar
         public Boolean call() throws Exception {
 
           // See if the attached trezor is initialised - no need to perform a cancel if there is no wallet
-          final Optional<HardwareWalletService> hardwareWalletService = CoreServices.getOrCreateHardwareWalletService();
+          final Optional<HardwareWalletService> hardwareWalletService = CoreServices.getCurrentHardwareWalletService();
           if (hardwareWalletService.isPresent()) {
 
             // Cancel the current Trezor operation
 
             // The Trezor should respond quickly to a cancel
-            setIgnoreHardwareWalletEventsThreshold(Dates.nowUtc().plusMillis(100));
+            ApplicationEventService.setIgnoreHardwareWalletEventsThreshold(Dates.nowUtc().plusMillis(100));
 
             log.debug("Sending 'request cancel'");
 

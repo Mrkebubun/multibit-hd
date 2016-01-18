@@ -11,25 +11,24 @@ import org.joda.time.DateTime;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
-import org.multibit.hd.brit.dto.FeeState;
-import org.multibit.hd.brit.seed_phrase.Bip39SeedPhraseGenerator;
-import org.multibit.hd.brit.seed_phrase.SeedPhraseGenerator;
+import org.multibit.commons.files.SecureFiles;
+import org.multibit.commons.utils.Dates;
+import org.multibit.hd.brit.core.dto.FeeState;
+import org.multibit.hd.brit.core.seed_phrase.Bip39SeedPhraseGenerator;
+import org.multibit.hd.brit.core.seed_phrase.SeedPhraseGenerator;
 import org.multibit.hd.core.config.Configurations;
 import org.multibit.hd.core.dto.*;
 import org.multibit.hd.core.events.BitcoinNetworkChangedEvent;
 import org.multibit.hd.core.events.BitcoinSentEvent;
 import org.multibit.hd.core.events.CoreEvents;
-import org.multibit.hd.core.files.SecureFiles;
 import org.multibit.hd.core.managers.BackupManager;
 import org.multibit.hd.core.managers.InstallationManager;
 import org.multibit.hd.core.managers.WalletManager;
 import org.multibit.hd.core.utils.BitcoinNetwork;
-import org.multibit.hd.core.utils.Dates;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
-import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -129,10 +128,10 @@ public class BitcoinNetworkServiceFunctionalTest {
     // See if there are any payments
     WalletService walletService = new WalletService(BitcoinNetwork.current().get());
 
-    walletService.initialise(temporaryDirectory, new WalletId(seed));
+    walletService.initialise(temporaryDirectory, new WalletId(seed), WALLET_PASSWORD);
 
     // Get the current wallets payments - there should be some
-    List<PaymentData> transactions = walletService.getPaymentDataList();
+    Set<PaymentData> transactions = walletService.getPaymentDataSet();
 
     log.debug("The payments in the wallet are:\n{}", transactions);
     assertThat(transactions.size() > 0).isTrue();
@@ -292,7 +291,12 @@ public class BitcoinNetworkServiceFunctionalTest {
     // Clear percentage complete
     percentComplete = 0;
 
-    bitcoinNetworkService.replayWallet(InstallationManager.getOrCreateApplicationDataDirectory(), Optional.of(replayDate.toDate()));
+    bitcoinNetworkService.replayWallet(
+      InstallationManager.getOrCreateApplicationDataDirectory(),
+      Optional.of(replayDate),
+      true, // Use fast catch up
+      false // Do not clear mempool
+    );
 
     int timeout = 0;
     while (timeout < MAX_TIMEOUT && (percentComplete < 100)) {

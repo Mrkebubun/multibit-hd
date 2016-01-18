@@ -9,16 +9,20 @@ import org.multibit.hd.core.dto.PaymentData;
 import org.multibit.hd.core.dto.RAGStatus;
 import org.multibit.hd.core.dto.TransactionData;
 import org.multibit.hd.ui.MultiBitUI;
+import org.multibit.hd.ui.audio.Sounds;
+import org.multibit.hd.ui.events.controller.ControllerEvents;
 import org.multibit.hd.ui.events.view.ViewEvents;
 import org.multibit.hd.ui.languages.Languages;
 import org.multibit.hd.ui.languages.MessageKey;
 import org.multibit.hd.ui.models.AlertModel;
+import org.multibit.hd.ui.utils.SafeDesktop;
 import org.multibit.hd.ui.views.components.*;
 import org.multibit.hd.ui.views.components.panels.PanelDecorator;
 import org.multibit.hd.ui.views.fonts.AwesomeIcon;
 import org.multibit.hd.ui.views.themes.Themes;
 import org.multibit.hd.ui.views.wizards.AbstractWizard;
 import org.multibit.hd.ui.views.wizards.AbstractWizardPanelView;
+import org.multibit.hd.ui.views.wizards.WizardButton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,13 +39,12 @@ import java.text.MessageFormat;
  * </ul>
  *
  * @since 0.0.1
- *
  */
 public class TransactionDetailPanelView extends AbstractWizardPanelView<PaymentsWizardModel, TransactionDetailPanelModel> {
 
   private static final Logger log = LoggerFactory.getLogger(TransactionDetailPanelView.class);
 
-  private static final int  MAXIMUM_ERROR_LENGTH = 100;
+  private static final int MAXIMUM_ERROR_LENGTH = 100;
 
   private static final String ELLIPSIS = "...";
 
@@ -54,7 +57,7 @@ public class TransactionDetailPanelView extends AbstractWizardPanelView<Payments
    */
   public TransactionDetailPanelView(AbstractWizard<PaymentsWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.TRANSACTION_DETAIL, AwesomeIcon.FILE_TEXT_O);
+    super(wizard, panelName, AwesomeIcon.FILE_TEXT_O, MessageKey.TRANSACTION_DETAIL);
 
   }
 
@@ -70,11 +73,12 @@ public class TransactionDetailPanelView extends AbstractWizardPanelView<Payments
 
   @Override
   public void initialiseContent(JPanel contentPanel) {
-    contentPanel.setLayout(new MigLayout(
-      Panels.migXYLayout(),
-      "[][]", // Column constraints
-      "[shrink][shrink][grow]" // Row constraints
-    ));
+    contentPanel.setLayout(
+      new MigLayout(
+        Panels.migXYLayout(),
+        "[][]", // Column constraints
+        "[shrink][shrink][grow]" // Row constraints
+      ));
 
     // Apply the theme
     contentPanel.setBackground(Themes.currentTheme.detailPanelBackground());
@@ -92,7 +96,11 @@ public class TransactionDetailPanelView extends AbstractWizardPanelView<Payments
     JScrollPane scrollPane = ScrollPanes.newReadOnlyScrollPane(rawTransactionTextArea);
 
     BlockExplorer blockExplorer = lookupBlockExplorer();
-    JButton blockExplorerBrowserButton = Buttons.newLaunchBrowserButton(getBlockExplorerBrowserAction(), MessageKey.VIEW_IN_BLOCK_EXPLORER, MessageKey.VIEW_IN_BLOCK_EXPLORER_TOOLTIP, blockExplorer.getName());
+    JButton blockExplorerBrowserButton = Buttons.newLaunchBrowserButton(
+      getBlockExplorerBrowserAction(),
+      MessageKey.VIEW_IN_BLOCK_EXPLORER,
+      MessageKey.VIEW_IN_BLOCK_EXPLORER_TOOLTIP,
+      blockExplorer.getName());
 
     contentPanel.add(transactionHashLabel, "wrap");
     contentPanel.add(transactionHashValue, "shrink," + MultiBitUI.WIZARD_MAX_WIDTH_MIG + ",wrap");
@@ -112,37 +120,30 @@ public class TransactionDetailPanelView extends AbstractWizardPanelView<Payments
   @Override
   public void afterShow() {
 
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
+    getNextButton().requestFocusInWindow();
+    ViewEvents.fireWizardButtonEnabledEvent(getPanelName(), WizardButton.NEXT, true);
 
-        getNextButton().requestFocusInWindow();
-        getNextButton().setEnabled(true);
+    PaymentData paymentData = getWizardModel().getPaymentData();
+    if (paymentData != null && paymentData instanceof TransactionData) {
+      final TransactionData transactionData = (TransactionData) paymentData;
 
-        PaymentData paymentData = getWizardModel().getPaymentData();
-        if (paymentData != null && paymentData instanceof TransactionData) {
-          final TransactionData transactionData = (TransactionData) paymentData;
+      transactionHashValue.setText(transactionData.getTransactionId());
 
-          transactionHashValue.setText(transactionData.getTransactionId());
+      // Append the size information
+      int size = transactionData.getSize();
+      String rawTransactionValue = "TxID:\n"
+        + transactionData.getRawTransaction()
+        + "\n"
+        + Languages.safeText(MessageKey.SIZE)
+        + ": "
+        + Languages.safeText(MessageKey.SIZE_VALUE, size);
 
-          // Append the size information
-          int size = transactionData.getSize();
-          String rawTransactionValue = "TxID:\n"
-            + transactionData.getRawTransaction()
-            + "\n"
-            + Languages.safeText(MessageKey.SIZE)
-            + ": "
-            + Languages.safeText(MessageKey.SIZE_VALUE,size);
+      rawTransactionTextArea.setText(rawTransactionValue);
 
-          rawTransactionTextArea.setText(rawTransactionValue);
+      // Ensure the raw transaction starts at the beginning
+      rawTransactionTextArea.setCaretPosition(0);
 
-          // Ensure the raw transaction starts at the beginning
-          rawTransactionTextArea.setCaretPosition(0);
-
-        }
-
-      }
-    });
+    }
 
   }
 
@@ -160,7 +161,7 @@ public class TransactionDetailPanelView extends AbstractWizardPanelView<Payments
       @Override
       public void actionPerformed(ActionEvent e) {
 
-        URI lookupURL = null;
+        URI lookupUri = null;
         try {
           PaymentData paymentData = getWizardModel().getPaymentData();
           if (paymentData != null && paymentData instanceof TransactionData) {
@@ -171,23 +172,27 @@ public class TransactionDetailPanelView extends AbstractWizardPanelView<Payments
 
             MessageFormat formatter = blockExplorer.getTransactionLookupMessageFormat();
             String lookupString = formatter.format(new String[]{transactionData.getTransactionId()});
-            lookupURL = URI.create(lookupString);
-            Desktop.getDesktop().browse(lookupURL);
+            lookupUri = URI.create(lookupString);
+            // Attempt to open the URI
+            if (!SafeDesktop.browse(lookupUri)) {
+              Sounds.playBeep(Configurations.currentConfiguration.getSound());
+            }
           }
         } catch (Exception ex) {
           // Log the error but carry on (no need to shut down for this type of error - just show an alert)
-          log.error("Failed to open URL " + lookupURL, ex);
+          log.error("Failed to open URL " + lookupUri, ex);
           String message = ex.toString();
-          if (message.length() >MAXIMUM_ERROR_LENGTH) {
+          if (message.length() > MAXIMUM_ERROR_LENGTH) {
             message = message.substring(0, MAXIMUM_ERROR_LENGTH) + ELLIPSIS;
           }
           final AlertModel alertModel = new AlertModel(message, RAGStatus.AMBER);
-          SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-              ViewEvents.fireAlertAddedEvent(alertModel);
-            }
-          });
+          SwingUtilities.invokeLater(
+            new Runnable() {
+              @Override
+              public void run() {
+                ControllerEvents.fireAddAlertEvent(alertModel);
+              }
+            });
         }
       }
     };

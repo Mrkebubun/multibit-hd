@@ -2,10 +2,12 @@ package org.multibit.hd.ui.views.wizards;
 
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
+import com.google.common.util.concurrent.Uninterruptibles;
 import org.multibit.hd.core.config.Configuration;
 import org.multibit.hd.core.config.Configurations;
 import org.multibit.hd.core.dto.*;
 import org.multibit.hd.core.managers.WalletManager;
+import org.multibit.hd.core.services.CoreServices;
 import org.multibit.hd.ui.views.wizards.about.AboutState;
 import org.multibit.hd.ui.views.wizards.about.AboutWizard;
 import org.multibit.hd.ui.views.wizards.about.AboutWizardModel;
@@ -26,10 +28,6 @@ import org.multibit.hd.ui.views.wizards.edit_contact.EditContactState;
 import org.multibit.hd.ui.views.wizards.edit_contact.EditContactWizard;
 import org.multibit.hd.ui.views.wizards.edit_contact.EditContactWizardModel;
 import org.multibit.hd.ui.views.wizards.edit_contact.EnterContactDetailsMode;
-import org.multibit.hd.ui.views.wizards.edit_history.EditHistoryState;
-import org.multibit.hd.ui.views.wizards.edit_history.EditHistoryWizard;
-import org.multibit.hd.ui.views.wizards.edit_history.EditHistoryWizardModel;
-import org.multibit.hd.ui.views.wizards.edit_history.EnterHistoryDetailsMode;
 import org.multibit.hd.ui.views.wizards.edit_wallet.EditWalletState;
 import org.multibit.hd.ui.views.wizards.edit_wallet.EditWalletWizard;
 import org.multibit.hd.ui.views.wizards.edit_wallet.EditWalletWizardModel;
@@ -79,9 +77,9 @@ import org.multibit.hd.ui.views.wizards.sound_settings.SoundSettingsWizardModel;
 import org.multibit.hd.ui.views.wizards.units_settings.UnitsSettingsState;
 import org.multibit.hd.ui.views.wizards.units_settings.UnitsSettingsWizard;
 import org.multibit.hd.ui.views.wizards.units_settings.UnitsWizardModel;
-import org.multibit.hd.ui.views.wizards.use_trezor.UseTrezorState;
-import org.multibit.hd.ui.views.wizards.use_trezor.UseTrezorWizard;
-import org.multibit.hd.ui.views.wizards.use_trezor.UseTrezorWizardModel;
+import org.multibit.hd.ui.views.wizards.use_hardware_wallet.UseHardwareWalletState;
+import org.multibit.hd.ui.views.wizards.use_hardware_wallet.UseHardwareWalletWizard;
+import org.multibit.hd.ui.views.wizards.use_hardware_wallet.UseHardwareWalletWizardModel;
 import org.multibit.hd.ui.views.wizards.verify_message.VerifyMessageState;
 import org.multibit.hd.ui.views.wizards.verify_message.VerifyMessageWizard;
 import org.multibit.hd.ui.views.wizards.verify_message.VerifyMessageWizardModel;
@@ -92,13 +90,14 @@ import org.multibit.hd.ui.views.wizards.wallet_details.WalletDetailsState;
 import org.multibit.hd.ui.views.wizards.wallet_details.WalletDetailsWizard;
 import org.multibit.hd.ui.views.wizards.wallet_details.WalletDetailsWizardModel;
 import org.multibit.hd.ui.views.wizards.welcome.WelcomeWizard;
-import org.multibit.hd.ui.views.wizards.welcome.WelcomeWizardMode;
+import org.multibit.hd.core.dto.WalletMode;
 import org.multibit.hd.ui.views.wizards.welcome.WelcomeWizardModel;
 import org.multibit.hd.ui.views.wizards.welcome.WelcomeWizardState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * <p>Factory to provide the following to UI:</p>
@@ -163,13 +162,7 @@ public class Wizards {
 
     log.debug("New 'Send bitcoin wizard'");
 
-    // Determine the starting state
-    if (parameter.getPaymentSessionSummary().isPresent()) {
-      return new SendBitcoinWizard(new SendBitcoinWizardModel(SendBitcoinState.SEND_DISPLAY_PAYMENT_REQUEST, parameter));
-    } else {
-      return new SendBitcoinWizard(new SendBitcoinWizardModel(SendBitcoinState.SEND_ENTER_AMOUNT, parameter));
-    }
-
+    return new SendBitcoinWizard(new SendBitcoinWizardModel(SendBitcoinState.SEND_ENTER_AMOUNT, parameter));
   }
 
   /**
@@ -203,46 +196,50 @@ public class Wizards {
   }
 
   /**
-   * @param historyEntries The list of history entries to edit
-   * @param mode           The editing mode
-   *
-   * @return A new "edit history" wizard for history entries
-   */
-  public static EditHistoryWizard newEditHistoryWizard(List<HistoryEntry> historyEntries, EnterHistoryDetailsMode mode) {
-
-    log.debug("New 'Edit history wizard'");
-
-    Preconditions.checkState(!historyEntries.isEmpty(), "'historyEntries' cannot be empty");
-    Preconditions.checkNotNull(mode, "'mode' must be present");
-
-    return new EditHistoryWizard(
-      new EditHistoryWizardModel(EditHistoryState.HISTORY_ENTER_DETAILS, historyEntries),
-      mode
-    );
-
-  }
-
-  /**
+   * @param initialState The initial state
+   * @param walletMode The wallet mode
    * @return A new "welcome" wizard for the initial set up
    */
-  public static WelcomeWizard newExitingWelcomeWizard(WelcomeWizardState initialState, WelcomeWizardMode mode) {
+  public static WelcomeWizard newExitingWelcomeWizard(WelcomeWizardState initialState, WalletMode walletMode) {
 
-    log.debug("New 'Exiting welcome wizard'. Initial state: {}, mode: {}", initialState, mode);
+    log.debug("New 'Exiting welcome wizard'. Initial state: {}, mode: {}", initialState, walletMode);
 
     Preconditions.checkNotNull(initialState, "'initialState' must be present");
 
-    return new WelcomeWizard(new WelcomeWizardModel(initialState, mode), true);
+    // Allow time for any background UI tasks to complete before starting up
+    // This reduces the chance of a language change with keyboard causing a
+    // crash on startup (someone has to be deliberately hammering to trigger a failure)
+    Uninterruptibles.sleepUninterruptibly(100, TimeUnit.MILLISECONDS);
+
+    return new WelcomeWizard(new WelcomeWizardModel(initialState), true);
 
   }
 
   /**
-   * @return A new "sign message" wizard for a warm start
+   * @return A new "sign message" wizard
    */
   public static SignMessageWizard newSignMessageWizard() {
 
-    log.debug("New 'Sign message wizard'");
+    WalletMode walletMode = WalletMode.of(CoreServices.getCurrentHardwareWalletService());
 
-    return new SignMessageWizard(new SignMessageWizardModel(SignMessageState.EDIT_MESSAGE), false);
+    switch (walletMode) {
+      case STANDARD:
+        log.debug("New 'Sign message wizard' with password");
+        return new SignMessageWizard(
+          new SignMessageWizardModel(SignMessageState.SIGN_MESSAGE_PASSWORD),
+          false
+        );
+      case TREZOR:
+        // Fall through
+      case KEEP_KEY:
+        log.debug("New 'Sign message wizard' with hardware wallet");
+        return new SignMessageWizard(
+          new SignMessageWizardModel(SignMessageState.SIGN_MESSAGE_HARDWARE),
+          false
+        );
+      default:
+        throw new IllegalStateException("Unknown hardware wallet: " + walletMode.name());
+    }
 
   }
 
@@ -264,21 +261,22 @@ public class Wizards {
    */
   public static CredentialsWizard newExitingCredentialsWizard(CredentialsRequestType credentialsRequestType) {
 
-    log.debug("Creating 'Credentials wizard' with credentialsRequestType = " + credentialsRequestType);
-    CredentialsWizardModel model;
-    switch (credentialsRequestType) {
-      case TREZOR:
-        model = new CredentialsWizardModel(CredentialsState.CREDENTIALS_REQUEST_MASTER_PUBLIC_KEY, credentialsRequestType);
-        break;
-      case PASSWORD:
-        model = new CredentialsWizardModel(CredentialsState.CREDENTIALS_ENTER_PASSWORD, credentialsRequestType);
-        break;
-      default:
-        throw new UnsupportedOperationException("The '" + credentialsRequestType.name() + "' is not supported");
-    }
-
-    // TODO This needs to be fixed (see #348)
+    // Use a synchronized block here to ensure that hardware wallets are
+    // handled correctly during startup
     synchronized (Wizards.class) {
+      log.debug("Creating 'Credentials wizard' with credentialsRequestType = " + credentialsRequestType);
+      CredentialsWizardModel model;
+      switch (credentialsRequestType) {
+        case HARDWARE:
+          model = new CredentialsWizardModel(CredentialsState.CREDENTIALS_REQUEST_MASTER_PUBLIC_KEY);
+          break;
+        case PASSWORD:
+          model = new CredentialsWizardModel(CredentialsState.CREDENTIALS_ENTER_PASSWORD);
+          break;
+        default:
+          throw new UnsupportedOperationException("The '" + credentialsRequestType.name() + "' is not supported");
+      }
+
       if (credentialsWizard != null) {
         // Clear down all existing subscriptions
         credentialsWizard.unsubscribeAll();
@@ -293,9 +291,9 @@ public class Wizards {
   /**
    * @return A new "use trezor" wizard
    */
-  public static UseTrezorWizard newUseTrezorWizard() {
+  public static UseHardwareWalletWizard newUseTrezorWizard() {
 
-    return new UseTrezorWizard(new UseTrezorWizardModel(UseTrezorState.SELECT_TREZOR_ACTION), false);
+    return new UseHardwareWalletWizard(new UseHardwareWalletWizardModel(UseHardwareWalletState.SELECT_HARDWARE_ACTION), false);
   }
 
   /**
@@ -405,6 +403,7 @@ public class Wizards {
 
     return new FeeSettingsWizard(new FeeSettingsWizardModel(FeeSettingsState.FEE_ENTER_DETAILS, configuration));
   }
+
   /**
    * @return A new "sound settings" wizard for sound selection
    */
@@ -467,14 +466,19 @@ public class Wizards {
     Preconditions.checkNotNull(paymentData, "'paymentData' must be present");
 
     PaymentsWizardModel paymentsWizardModel;
-    if (paymentData instanceof PaymentRequestData) {
+    if (paymentData instanceof MBHDPaymentRequestData) {
       paymentsWizardModel = new PaymentsWizardModel(PaymentsState.PAYMENT_REQUEST_DETAILS, paymentData);
+      paymentsWizardModel.setMBHDPaymentRequestData((MBHDPaymentRequestData) paymentData);
+      paymentsWizardModel.setShowPrevOnPaymentRequestDetailScreen(false);
+    } else if (paymentData instanceof PaymentRequestData) {
+      paymentsWizardModel = new PaymentsWizardModel(PaymentsState.BIP70_PAYMENT_REQUEST_DETAILS, paymentData);
       paymentsWizardModel.setPaymentRequestData((PaymentRequestData) paymentData);
       paymentsWizardModel.setShowPrevOnPaymentRequestDetailScreen(false);
     } else {
       paymentsWizardModel = new PaymentsWizardModel(PaymentsState.TRANSACTION_OVERVIEW, paymentData);
       paymentsWizardModel.setShowPrevOnPaymentRequestDetailScreen(true);
     }
+
 
     return new PaymentsWizard(paymentsWizardModel, false);
   }

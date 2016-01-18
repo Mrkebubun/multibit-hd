@@ -20,13 +20,11 @@ import java.io.File;
  * </ul>
  *
  * @since 0.0.1
- *
  */
 public class SelectFileView extends AbstractComponentView<SelectFileModel> {
 
   // View components
   private JTextField selectedFileTextField;
-  private JFileChooser fileChooser = new JFileChooser();
 
   /**
    * @param model The model backing this view
@@ -41,9 +39,9 @@ public class SelectFileView extends AbstractComponentView<SelectFileModel> {
     SelectFileModel model = getModel().get();
 
     panel = Panels.newPanel(new MigLayout(
-      "insets 0", // Layout
-      "[][]", // Columns
-      "[]10[]" // Rows
+            "insets 0", // Layout
+            "[][]", // Columns
+            "[]10[]" // Rows
     ));
 
     selectedFileTextField = TextBoxes.newSelectFile();
@@ -91,7 +89,7 @@ public class SelectFileView extends AbstractComponentView<SelectFileModel> {
   }
 
   /**
-   * @return A new action for toggling the display of the seed phrase
+   * @return A new action for opening a file chooser
    */
   private Action getOpenSelectFileAction() {
     // Show or hide the seed phrase
@@ -100,25 +98,41 @@ public class SelectFileView extends AbstractComponentView<SelectFileModel> {
       @Override
       public void actionPerformed(ActionEvent e) {
 
-        SelectFileModel model = getModel().get();
+        final SelectFileModel model = getModel().get();
 
-        // Only require a directory
-        fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        SwingUtilities.invokeLater(new Runnable() {
+          @Override
+          public void run() {
+            // Only require a directory
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
 
-        int result = fileChooser.showOpenDialog(currentComponentPanel());
+            // Set an initial directory, if already chosen
+            if (getModel().isPresent()) {
+              String selectedFileAsString = getModel().get().getValue();
+              if (selectedFileAsString != null) {
+                File selectedFile = new File(selectedFileAsString);
+                if (selectedFile.exists() && selectedFile.isDirectory()) {
+                  fileChooser.setSelectedFile(selectedFile);
+                }
+              }
+            }
 
-        if (result == JFileChooser.APPROVE_OPTION) {
-          File file = fileChooser.getSelectedFile();
+            int result = fileChooser.showOpenDialog(currentComponentPanel());
 
-          getModel().get().setValue(file.getAbsolutePath());
-          getModel().get().setSelected(true);
+            if (result == JFileChooser.APPROVE_OPTION) {
+              File file = fileChooser.getSelectedFile();
 
-        } else {
-          getModel().get().setSelected(false);
-        }
+              getModel().get().setValue(file.getAbsolutePath());
+              getModel().get().setSelected(true);
 
-        selectedFileTextField.setText(model.getValue());
+            } else {
+              getModel().get().setSelected(false);
+            }
 
+            selectedFileTextField.setText(model.getValue());
+          }
+        });
       }
 
     };

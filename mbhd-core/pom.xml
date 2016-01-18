@@ -139,13 +139,6 @@
 
   <dependencies>
 
-    <!-- BRIT for receiving payments -->
-    <dependency>
-      <groupId>org.multibit.hd</groupId>
-      <artifactId>mbhd-brit</artifactId>
-      <version>${project.parent.version}</version>
-    </dependency>
-
     <!-- XChange for accessing Bitcoin exchanges
          See https://github.com/timmolter/XChange/wiki/Exchange-Support
     -->
@@ -300,11 +293,11 @@
     </dependency>
 
     <!-- XChange Cavirtex exchange support -->
-    <!--<dependency>-->
-      <!--<groupId>com.xeiam.xchange</groupId>-->
-      <!--<artifactId>xchange-cavirtex</artifactId>-->
-      <!--<version>${xchange.version}</version>-->
-    <!--</dependency>-->
+    <dependency>
+      <groupId>com.xeiam.xchange</groupId>
+      <artifactId>xchange-cavirtex</artifactId>
+      <version>${xchange.version}</version>
+    </dependency>
 
     <!-- XChange CampBX exchange support -->
     <dependency>
@@ -351,11 +344,12 @@
     </dependency>
 
     <!-- XChange Cryptotrade exchange support -->
-    <dependency>
-      <groupId>com.xeiam.xchange</groupId>
-      <artifactId>xchange-cryptotrade</artifactId>
-      <version>${xchange.version}</version>
-    </dependency>
+    <!-- Out of business -->
+    <!--<dependency>-->
+      <!--<groupId>com.xeiam.xchange</groupId>-->
+      <!--<artifactId>xchange-cryptotrade</artifactId>-->
+      <!--<version>${xchange.version}</version>-->
+    <!--</dependency>-->
 
     <!-- XChange Cryptsy exchange support -->
     <!-- Several broken feeds at 2.1.0 -->

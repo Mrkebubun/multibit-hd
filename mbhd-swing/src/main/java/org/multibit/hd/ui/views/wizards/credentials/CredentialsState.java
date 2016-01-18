@@ -17,19 +17,24 @@ public enum CredentialsState {
   CREDENTIALS_ENTER_PASSWORD,
 
   /**
-   * Request the master public key from the Trezor (does not trigger PIN request)
+   * Request the master public key from the Trezor (may trigger PIN request)
    */
   CREDENTIALS_REQUEST_MASTER_PUBLIC_KEY,
 
   /**
-   * Request a cipher key from the Trezor (most likely triggers a PIN request)
+   * Master public key has requested a PIN
+   */
+  CREDENTIALS_ENTER_PIN_FROM_MASTER_PUBLIC_KEY,
+
+  /**
+   * Request a cipher key from the Trezor (may trigger a PIN request)
    */
   CREDENTIALS_REQUEST_CIPHER_KEY,
 
   /**
-   * Enter a PIN
+   * Cipher key has requested a PIN
    */
-  CREDENTIALS_ENTER_PIN,
+  CREDENTIALS_ENTER_PIN_FROM_CIPHER_KEY,
 
   /**
    * Information panel asking user to press the Trezor "confirm" button
@@ -41,13 +46,19 @@ public enum CredentialsState {
    */
   CREDENTIALS_LOAD_WALLET_REPORT,
 
-   /**
+  /**
    * Special case state used by the restore button action to trigger
    * a handover to the welcome wizard
    */
   CREDENTIALS_RESTORE,
 
-  // End of enum
+  /**
+   * Special case state used by the create button action to trigger
+   * a handover to the welcome wizard
+   */
+  CREDENTIALS_CREATE,
+
+   // End of enum
   ;
 
 }

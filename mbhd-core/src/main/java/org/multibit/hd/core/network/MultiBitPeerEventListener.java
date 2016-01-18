@@ -24,6 +24,8 @@ public class MultiBitPeerEventListener implements PeerEventListener {
 
   private int numberOfConnectedPeers = 0;
 
+  private boolean isDownloading = false;
+
   public MultiBitPeerEventListener() {
   }
 
@@ -41,8 +43,11 @@ public class MultiBitPeerEventListener implements PeerEventListener {
     //log.debug("Number of blocks left: {}, originalBlocksLeft: {}", blocksLeft, originalBlocksLeft);
 
     if (blocksLeft < 0 || originalBlocksLeft <= 0) {
+      isDownloading = false;
       return;
     }
+
+    isDownloading = blocksLeft > 0;
 
     double pct = 100.0 - (100.0 * (blocksLeft / (double) originalBlocksLeft));
     if ((int) pct != lastPercent) {
@@ -56,13 +61,15 @@ public class MultiBitPeerEventListener implements PeerEventListener {
     }
 
     if (blocksLeft == 0) {
-       doneDownload();
-     }
+      doneDownload();
+    }
   }
 
   @Override
   public void onChainDownloadStarted(Peer peer, int blocksLeft) {
-    log.debug("Chain download started with number of blocks left = {}", blocksLeft);
+    log.trace("Chain download started with number of blocks left = {}", blocksLeft);
+
+    isDownloading = blocksLeft > 0;
 
     startDownload(blocksLeft);
     // Only mark this the first time, because this method can be called more than once during a chain download
@@ -82,7 +89,7 @@ public class MultiBitPeerEventListener implements PeerEventListener {
 
   @Override
   public void onPeerConnected(Peer peer, int peerCount) {
-    log.debug("(connect) Number of peers = " + peerCount + ", lastPercent = " + lastPercent);
+    log.trace("(connect) Number of peers = " + peerCount + ", lastPercent = " + lastPercent);
 
     numberOfConnectedPeers = peerCount;
 
@@ -92,7 +99,7 @@ public class MultiBitPeerEventListener implements PeerEventListener {
 
   @Override
   public void onPeerDisconnected(Peer peer, int peerCount) {
-    log.debug("(disconnect) Number of peers = " + peerCount);
+    log.trace("(disconnect) Number of peers = " + peerCount);
     if (peerCount == numberOfConnectedPeers) {
       // Don't fire an event - not useful
       return;
@@ -100,7 +107,7 @@ public class MultiBitPeerEventListener implements PeerEventListener {
     numberOfConnectedPeers = peerCount;
 
     CoreEvents.fireBitcoinNetworkChangedEvent(
-            BitcoinNetworkSummary.newNetworkPeerCount(numberOfConnectedPeers));
+      BitcoinNetworkSummary.newNetworkPeerCount(numberOfConnectedPeers));
   }
 
   @Override
@@ -118,15 +125,17 @@ public class MultiBitPeerEventListener implements PeerEventListener {
         if (currentWallet != null) {
           try {
             if (currentWallet.isTransactionRelevant(transaction)) {
+              log.debug("Relevant transaction {} has been seen by peer {}", transaction.getHashAsString(), peer.getAddress());
+
               if (!(transaction.isTimeLocked() && transaction.getConfidence().getSource() != TransactionConfidence.Source.SELF)) {
                 Sha256Hash transactionHash = transaction.getHash();
                 if (currentWallet.getTransaction(transactionHash) == null) {
                   int transactionIdentityHashCode = System.identityHashCode(transaction);
 
                   log.debug(
-                          "MultiBitHD adding a new pending transaction for the wallet '{}'\n{}",
-                          currentWalletSummary.get().getWalletId(),
-                          transaction.toString()
+                    "MultiBitHD adding a new pending transaction for the wallet '{}'\n{}",
+                    currentWalletSummary.get().getWalletId(),
+                    transaction.toString()
                   );
 
                   try {
@@ -183,12 +192,11 @@ public class MultiBitPeerEventListener implements PeerEventListener {
   protected void progress(double pct, int blocksSoFar, Date date) {
 
     // Logging this information in production is not necessary
-    log.debug(
-            String.format(
-                    "Chain download %d%% done with %d blocks to go, block date %s",
-                    (int) pct,
-                    blocksSoFar,
-                    DateFormat.getDateTimeInstance().format(date))
+    log.trace(
+      "Chain download {}% done with {} blocks to go, block date {}",
+      (int) pct,
+      blocksSoFar,
+      DateFormat.getDateTimeInstance().format(date)
     );
   }
 
@@ -198,7 +206,9 @@ public class MultiBitPeerEventListener implements PeerEventListener {
    * @param blocks the number of blocks to download, estimated
    */
   protected void startDownload(int blocks) {
-    log.debug("Started download with {} blocks to download", blocks);
+    isDownloading = blocks > 0;
+
+    log.info("Started download with {} blocks to download", blocks);
     CoreEvents.fireBitcoinNetworkChangedEvent(BitcoinNetworkSummary.newChainDownloadStarted());
 
   }
@@ -207,7 +217,8 @@ public class MultiBitPeerEventListener implements PeerEventListener {
    * Called when we are done downloading the block chain.
    */
   protected void doneDownload() {
-    log.debug("Download of block chain complete");
+    log.info("Download of block chain complete");
+    isDownloading = false;
 
     // Fire that we have completed the sync
     lastPercent = 100;
@@ -219,8 +230,11 @@ public class MultiBitPeerEventListener implements PeerEventListener {
 
     // Then fire the number of connected peers
     CoreEvents.fireBitcoinNetworkChangedEvent(
-            BitcoinNetworkSummary.newNetworkPeerCount(numberOfConnectedPeers));
+      BitcoinNetworkSummary.newNetworkPeerCount(numberOfConnectedPeers));
+  }
 
+  public boolean isDownloading() {
+    return isDownloading;
   }
 }
 

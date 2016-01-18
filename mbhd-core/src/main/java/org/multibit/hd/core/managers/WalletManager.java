@@ -22,29 +22,30 @@ import org.bitcoinj.store.WalletProtobufSerializer;
 import org.bitcoinj.wallet.DeterministicSeed;
 import org.bitcoinj.wallet.Protos;
 import org.joda.time.DateTime;
-import org.multibit.hd.brit.crypto.AESUtils;
-import org.multibit.hd.brit.dto.FeeState;
-import org.multibit.hd.brit.extensions.MatcherResponseWalletExtension;
-import org.multibit.hd.brit.extensions.SendFeeDtoWalletExtension;
-import org.multibit.hd.brit.seed_phrase.Bip39SeedPhraseGenerator;
-import org.multibit.hd.brit.seed_phrase.SeedPhraseGenerator;
-import org.multibit.hd.brit.services.FeeService;
-import org.multibit.hd.brit.services.TransactionSentBySelfProvider;
-import org.multibit.hd.core.concurrent.SafeExecutors;
+import org.multibit.commons.crypto.AESUtils;
+import org.multibit.commons.files.SecureFiles;
+import org.multibit.commons.utils.Dates;
+import org.multibit.hd.brit.core.dto.FeeState;
+import org.multibit.hd.brit.core.extensions.MatcherResponseWalletExtension;
+import org.multibit.hd.brit.core.extensions.SendFeeDtoWalletExtension;
+import org.multibit.hd.brit.core.seed_phrase.Bip39SeedPhraseGenerator;
+import org.multibit.hd.brit.core.seed_phrase.SeedPhraseGenerator;
+import org.multibit.hd.brit.core.services.FeeService;
+import org.multibit.hd.brit.core.services.TransactionSentBySelfProvider;
+import org.multibit.commons.concurrent.SafeExecutors;
 import org.multibit.hd.core.config.Configurations;
 import org.multibit.hd.core.config.Yaml;
 import org.multibit.hd.core.crypto.EncryptedFileReaderWriter;
 import org.multibit.hd.core.dto.*;
+import org.multibit.hd.core.error_reporting.ExceptionHandler;
 import org.multibit.hd.core.events.CoreEvents;
 import org.multibit.hd.core.events.ShutdownEvent;
 import org.multibit.hd.core.events.TransactionSeenEvent;
 import org.multibit.hd.core.events.WalletLoadEvent;
-import org.multibit.hd.core.exceptions.ExceptionHandler;
 import org.multibit.hd.core.exceptions.WalletLoadException;
 import org.multibit.hd.core.exceptions.WalletSaveException;
 import org.multibit.hd.core.exceptions.WalletVersionException;
 import org.multibit.hd.core.extensions.WalletTypeExtension;
-import org.multibit.hd.core.files.SecureFiles;
 import org.multibit.hd.core.services.BackupService;
 import org.multibit.hd.core.services.BitcoinNetworkService;
 import org.multibit.hd.core.services.CoreServices;
@@ -125,19 +126,19 @@ public enum WalletManager implements WalletEventListener {
     }
   };
 
-  private static final int AUTO_SAVE_DELAY = 30000; // milliseconds
+  private static final int AUTO_SAVE_DELAY = 60000; // milliseconds
 
   // TODO (GR) Refactor this to be injected
   private static final NetworkParameters networkParameters = BitcoinNetwork.current().get();
 
   private static final Logger log = LoggerFactory.getLogger(WalletManager.class);
 
-  public static final String EARLIEST_HD_WALLET_DATE = "2014-10-01"; // TODO refine this
-
   /**
-   * How much a block time might drift
+   * The earliest possible HD wallet.
+   * Set after discussions on the bitcoinj mailing list:
+   * https://groups.google.com/forum/#!topic/bitcoinj/288mCHhLMrA
    */
-  public static final int DRIFT_TIME = 3600; // seconds
+  public static final String EARLIEST_HD_WALLET_DATE = "2014-05-01";
 
   public static final String WALLET_DIRECTORY_PREFIX = "mbhd";
   // The format of the wallet directories is WALLET_DIRECTORY_PREFIX + a wallet id.
@@ -206,6 +207,12 @@ public enum WalletManager implements WalletEventListener {
     return Arrays.copyOf(SCRYPT_SALT, SCRYPT_SALT.length);
   }
 
+
+  /**
+   * A new wallet up to this amount of seconds old will have a regular sync performed on it and not be checkpointed.
+   */
+  private static final int ALLOWABLE_TIME_DELTA = 10;
+
   /**
    * Open the given wallet and hook it up to the blockchain and peergroup so that it receives notifications
    *
@@ -260,9 +267,9 @@ public enum WalletManager implements WalletEventListener {
   }
 
   /**
-   * THIS METHOD DOES NOT PRODUCE BIP32 COMPLIANT WALLETS !
-   * THIS METHOD DOES NOT PRODUCE BIP32 COMPLIANT WALLETS !
-   * THIS METHOD DOES NOT PRODUCE BIP32 COMPLIANT WALLETS !
+   * <h1>THIS METHOD DOES NOT PRODUCE BIP32 COMPLIANT WALLETS !</h1>
+   * <h1>THIS METHOD DOES NOT PRODUCE BIP32 COMPLIANT WALLETS !</h1>
+   * <h1>THIS METHOD DOES NOT PRODUCE BIP32 COMPLIANT WALLETS !</h1>
    *
    * See: https://github.com/bitcoin-solutions/multibit-hd/issues/445
    *
@@ -287,15 +294,14 @@ public enum WalletManager implements WalletEventListener {
    * @throws WalletLoadException    if there is already a wallet created but it could not be loaded
    * @throws WalletVersionException if there is already a wallet but the wallet version cannot be understood
    */
-  @Deprecated
   public WalletSummary badlyGetOrCreateMBHDSoftWalletSummaryFromSeed(
-          File applicationDataDirectory,
-          byte[] seed,
-          long creationTimeInSeconds,
-          String password,
-          String name,
-          String notes,
-          boolean performSynch) throws WalletLoadException, WalletVersionException, IOException {
+    File applicationDataDirectory,
+    byte[] seed,
+    long creationTimeInSeconds,
+    String password,
+    String name,
+    String notes,
+    boolean performSynch) throws WalletLoadException, WalletVersionException, IOException {
     log.debug("badlyGetOrCreateMBHDSoftWalletSummaryFromSeed called");
     final WalletSummary walletSummary;
 
@@ -369,114 +375,114 @@ public enum WalletManager implements WalletEventListener {
   }
 
   /**
-    * <p>Create a MBHD soft wallet from a seed.</p>
-    * <p>This is stored in the specified directory.</p>
-    * <p>The name of the wallet directory is derived from the seed.</p>
-    * <p>If the wallet file already exists it is loaded and returned</p>
-    * <p>Auto-save is hooked up so that the wallet is saved on modification</p>
-    * <p>Synchronization is begun if required</p>
-    *
-    * @param applicationDataDirectory The application data directory containing the wallet
-    * @param entropy                  The entropy equivalent to the wallet words (seed phrase)
-    *                                 This is the byte array equivalent to the random number you are using
-    *                                 This is NOT the seed bytes, which have undergone Scrypt processing
-    * @param seed                     The seed byte array (the seed phrase after Scrypt processing)
-    * @param creationTimeInSeconds    The creation time of the wallet, in seconds since epoch
-    * @param password                 The credentials to use to encrypt the wallet - if null then the wallet is not loaded
-    * @param name                     The wallet name
-    * @param notes                    Public notes associated with the wallet
-    * @param performSynch             True if the wallet should immediately begin synchronization
-    *
-    * @return Wallet summary containing the wallet object and the walletId (used in storage etc)
-    *
-    * @throws IllegalStateException  if applicationDataDirectory is incorrect
-    * @throws WalletLoadException    if there is already a wallet created but it could not be loaded
-    * @throws WalletVersionException if there is already a wallet but the wallet version cannot be understood
-    */
-   public WalletSummary getOrCreateMBHDSoftWalletSummaryFromEntropy(
-     File applicationDataDirectory,
-     byte[] entropy,
-     byte[] seed,
-     long creationTimeInSeconds,
-     String password,
-     String name,
-     String notes,
-     boolean performSynch) throws WalletLoadException, WalletVersionException, IOException {
-     log.debug("getOrCreateMBHDSoftWalletSummaryFromEntropy called");
-     final WalletSummary walletSummary;
+   * <p>Create a MBHD soft wallet from a seed.</p>
+   * <p>This is stored in the specified directory.</p>
+   * <p>The name of the wallet directory is derived from the seed.</p>
+   * <p>If the wallet file already exists it is loaded and returned</p>
+   * <p>Auto-save is hooked up so that the wallet is saved on modification</p>
+   * <p>Synchronization is begun if required</p>
+   *
+   * @param applicationDataDirectory The application data directory containing the wallet
+   * @param entropy                  The entropy equivalent to the wallet words (seed phrase)
+   *                                 This is the byte array equivalent to the random number you are using
+   *                                 This is NOT the seed bytes, which have undergone Scrypt processing
+   * @param seed                     The seed byte array (the seed phrase after Scrypt processing)
+   * @param creationTimeInSeconds    The creation time of the wallet, in seconds since epoch
+   * @param password                 The credentials to use to encrypt the wallet - if null then the wallet is not loaded
+   * @param name                     The wallet name
+   * @param notes                    Public notes associated with the wallet
+   * @param performSynch             True if the wallet should immediately begin synchronization
+   *
+   * @return Wallet summary containing the wallet object and the walletId (used in storage etc)
+   *
+   * @throws IllegalStateException  if applicationDataDirectory is incorrect
+   * @throws WalletLoadException    if there is already a wallet created but it could not be loaded
+   * @throws WalletVersionException if there is already a wallet but the wallet version cannot be understood
+   */
+  public WalletSummary getOrCreateMBHDSoftWalletSummaryFromEntropy(
+    File applicationDataDirectory,
+    byte[] entropy,
+    byte[] seed,
+    long creationTimeInSeconds,
+    String password,
+    String name,
+    String notes,
+    boolean performSynch) throws WalletLoadException, WalletVersionException, IOException {
+    log.debug("getOrCreateMBHDSoftWalletSummaryFromEntropy called, creation time: {}", new DateTime(creationTimeInSeconds * 1000));
+    final WalletSummary walletSummary;
 
-     // Create a wallet id from the seed to work out the wallet root directory
-     // The seed bytes are used for backwards compatibility
-     final WalletId walletId = new WalletId(seed);
-     String walletRoot = createWalletRoot(walletId);
+    // Create a wallet id from the seed to work out the wallet root directory
+    // The seed bytes are used for backwards compatibility
+    final WalletId walletId = new WalletId(seed);
+    String walletRoot = createWalletRoot(walletId);
 
-     final File walletDirectory = WalletManager.getOrCreateWalletDirectory(applicationDataDirectory, walletRoot);
-     log.debug("Wallet directory:\n'{}'", walletDirectory.getAbsolutePath());
+    final File walletDirectory = WalletManager.getOrCreateWalletDirectory(applicationDataDirectory, walletRoot);
+    log.debug("Wallet directory:\n'{}'", walletDirectory.getAbsolutePath());
 
-     final File walletFile = new File(walletDirectory.getAbsolutePath() + File.separator + MBHD_WALLET_NAME);
-     final File walletFileWithAES = new File(walletDirectory.getAbsolutePath() + File.separator + MBHD_WALLET_NAME + MBHD_AES_SUFFIX);
+    final File walletFile = new File(walletDirectory.getAbsolutePath() + File.separator + MBHD_WALLET_NAME);
+    final File walletFileWithAES = new File(walletDirectory.getAbsolutePath() + File.separator + MBHD_WALLET_NAME + MBHD_AES_SUFFIX);
 
-     boolean saveWalletYaml = false;
-     boolean createdNew = false;
-     if (walletFileWithAES.exists()) {
-       log.debug("Discovered AES encrypted wallet file. Loading...");
+    boolean saveWalletYaml = false;
+    boolean createdNew = false;
+    if (walletFileWithAES.exists()) {
+      log.debug("Discovered AES encrypted wallet file. Loading...");
 
-       // There is already a wallet created with this root - if so load it and return that
-       walletSummary = loadFromWalletDirectory(walletDirectory, password);
+      // There is already a wallet created with this root - if so load it and return that
+      walletSummary = loadFromWalletDirectory(walletDirectory, password);
 
-       setCurrentWalletSummary(walletSummary);
-     } else {
-       // Wallet file does not exist so create it below the known good wallet directory
-       log.debug("Creating new wallet file...");
+      setCurrentWalletSummary(walletSummary);
+    } else {
+      // Wallet file does not exist so create it below the known good wallet directory
+      log.debug("Creating new wallet file...");
 
-       // Create a wallet using the entropy
-       // DeterministicSeed constructor expects ENTROPY here
-       DeterministicSeed deterministicSeed = new DeterministicSeed(entropy, "", creationTimeInSeconds);
-       Wallet walletToReturn = Wallet.fromSeed(networkParameters, deterministicSeed);
-       walletToReturn.setKeychainLookaheadSize(LOOK_AHEAD_SIZE);
-       walletToReturn.encrypt(password);
-       walletToReturn.setVersion(MBHD_WALLET_VERSION);
+      // Create a wallet using the entropy
+      // DeterministicSeed constructor expects ENTROPY here
+      DeterministicSeed deterministicSeed = new DeterministicSeed(entropy, "", creationTimeInSeconds);
+      Wallet walletToReturn = Wallet.fromSeed(networkParameters, deterministicSeed);
+      walletToReturn.setKeychainLookaheadSize(LOOK_AHEAD_SIZE);
+      walletToReturn.encrypt(password);
+      walletToReturn.setVersion(MBHD_WALLET_VERSION);
 
-       // Save it now to ensure it is on the disk
-       walletToReturn.saveToFile(walletFile);
-       EncryptedFileReaderWriter.makeAESEncryptedCopyAndDeleteOriginal(walletFile, password);
+      // Save it now to ensure it is on the disk
+      walletToReturn.saveToFile(walletFile);
+      EncryptedFileReaderWriter.makeAESEncryptedCopyAndDeleteOriginal(walletFile, password);
 
-       // Create a new wallet summary
-       walletSummary = new WalletSummary(walletId, walletToReturn);
-       walletSummary.setName(name);
-       walletSummary.setNotes(notes);
-       walletSummary.setWalletPassword(new WalletPassword(password, walletId));
-       walletSummary.setWalletFile(walletFile);
-       walletSummary.setWalletType(WalletType.MBHD_SOFT_WALLET_BIP32);
-       setCurrentWalletSummary(walletSummary);
+      // Create a new wallet summary
+      walletSummary = new WalletSummary(walletId, walletToReturn);
+      walletSummary.setName(name);
+      walletSummary.setNotes(notes);
+      walletSummary.setWalletPassword(new WalletPassword(password, walletId));
+      walletSummary.setWalletFile(walletFile);
+      walletSummary.setWalletType(WalletType.MBHD_SOFT_WALLET_BIP32);
+      setCurrentWalletSummary(walletSummary);
 
-       // Save the wallet YAML
-       saveWalletYaml = true;
-       createdNew = true;
+      // Save the wallet YAML
+      saveWalletYaml = true;
+      createdNew = true;
 
-       try {
-         // The seed bytes are used as the secret to encrypt the password (mainly for backwards compatibility)
-         WalletManager.writeEncryptedPasswordAndBackupKey(walletSummary, seed, password);
-       } catch (NoSuchAlgorithmException e) {
-         throw new WalletLoadException("Could not store encrypted credentials and backup AES key", e);
-       }
-     }
+      try {
+        // The seed bytes are used as the secret to encrypt the password (mainly for backwards compatibility)
+        WalletManager.writeEncryptedPasswordAndBackupKey(walletSummary, seed, password);
+      } catch (NoSuchAlgorithmException e) {
+        throw new WalletLoadException("Could not store encrypted credentials and backup AES key", e);
+      }
+    }
 
-     // Set wallet type
-     walletSummary.getWallet().addOrUpdateExtension(new WalletTypeExtension(WalletType.MBHD_SOFT_WALLET_BIP32));
+    // Set wallet type
+    walletSummary.getWallet().addOrUpdateExtension(new WalletTypeExtension(WalletType.MBHD_SOFT_WALLET_BIP32));
 
-     if (createdNew) {
-       CoreEvents.fireWalletLoadEvent(new WalletLoadEvent(Optional.of(walletId), true, CoreMessageKey.WALLET_LOADED_OK, null, Optional.<File>absent()));
-     }
+    if (createdNew) {
+      CoreEvents.fireWalletLoadEvent(new WalletLoadEvent(Optional.of(walletId), true, CoreMessageKey.WALLET_LOADED_OK, null, Optional.<File>absent()));
+    }
 
-     // Wallet is now created - finish off other configuration and check if wallet needs syncing
-     updateConfigurationAndCheckSync(walletRoot, walletDirectory, walletSummary, saveWalletYaml, performSynch);
+    // Wallet is now created - finish off other configuration and check if wallet needs syncing
+    updateConfigurationAndCheckSync(walletRoot, walletDirectory, walletSummary, saveWalletYaml, performSynch);
 
-     return walletSummary;
-   }
+    return walletSummary;
+  }
 
   /**
-   * Create a Trezor hard wallet from an HD root node.
+   * Create a Trezor / KeepKey hard wallet from an HD root node.
    * <p/>
    * This is stored in the specified application directory.
    * The name of the wallet directory is derived from the rootNode.
@@ -499,16 +505,16 @@ public enum WalletManager implements WalletEventListener {
    * @throws WalletLoadException    if there is already a wallet created but it could not be loaded
    * @throws WalletVersionException if there is already a wallet but the wallet version cannot be understood
    */
-  public WalletSummary getOrCreateTrezorHardWalletSummaryFromRootNode(
-    File applicationDataDirectory,
-    DeterministicKey rootNode,
-    long creationTimeInSeconds,
-    String password,
-    String name,
-    String notes,
-    boolean performSync) throws WalletLoadException, WalletVersionException, IOException {
+  public WalletSummary getOrCreateTrezorCloneHardWalletSummaryFromRootNode(
+          File applicationDataDirectory,
+          DeterministicKey rootNode,
+          long creationTimeInSeconds,
+          String password,
+          String name,
+          String notes,
+          boolean performSync) throws WalletLoadException, WalletVersionException, IOException {
 
-    log.debug("getOrCreateTrezorHardWalletSummaryFromRootNode called");
+    log.debug("getOrCreateTrezorCloneHardWalletSummaryFromRootNode called");
 
     // Create a wallet id from the rootNode to work out the wallet root directory
     final WalletId walletId = new WalletId(rootNode.getIdentifier());
@@ -546,8 +552,10 @@ public enum WalletManager implements WalletEventListener {
       }
 
       // Create a wallet using the root node
-      DeterministicKey rootNodePubOnly = rootNode.getPubOnly();
+      DeterministicKey rootNodePubOnly = rootNode.dropPrivateBytes();
       log.debug("Watching wallet based on: {}", rootNodePubOnly);
+
+      rootNodePubOnly.setCreationTimeSeconds(creationTimeInSeconds);
 
       Wallet walletToReturn = Wallet.fromWatchingKey(networkParameters, rootNodePubOnly, creationTimeInSeconds, rootNodePubOnly.getPath());
       walletToReturn.setKeychainLookaheadSize(LOOK_AHEAD_SIZE);
@@ -599,7 +607,7 @@ public enum WalletManager implements WalletEventListener {
   }
 
   /**
-   * Create a Trezor soft wallet from a seed phrase
+   * Create a Trezor or KeepKey soft wallet from a seed phrase
    * <p/>
    * This is stored in the specified application directory.
    * The name of the wallet directory is derived from the rootNode.
@@ -622,16 +630,16 @@ public enum WalletManager implements WalletEventListener {
    * @throws WalletLoadException    if there is already a wallet created but it could not be loaded
    * @throws WalletVersionException if there is already a wallet but the wallet version cannot be understood
    */
-  public WalletSummary getOrCreateTrezorSoftWalletSummaryFromSeedPhrase(
-    File applicationDataDirectory,
-    String seedPhrase,
-    long creationTimeInSeconds,
-    String password,
-    String name,
-    String notes,
-    boolean performSync) throws UnreadableWalletException, WalletLoadException, WalletVersionException, IOException {
+  public WalletSummary getOrCreateTrezorCloneSoftWalletSummaryFromSeedPhrase(
+          File applicationDataDirectory,
+          String seedPhrase,
+          long creationTimeInSeconds,
+          String password,
+          String name,
+          String notes,
+          boolean performSync) throws UnreadableWalletException, WalletLoadException, WalletVersionException, IOException {
 
-    log.debug("getOrCreateTrezorSoftWalletSummaryFromSeedPhrase called");
+    log.debug("getOrCreateTrezorCloneSoftWalletSummaryFromSeedPhrase called");
 
     // Create a wallet id from the seed to work out the wallet root directory
     SeedPhraseGenerator seedGenerator = new Bip39SeedPhraseGenerator();
@@ -679,7 +687,7 @@ public enum WalletManager implements WalletEventListener {
       trezorRootNodePathList.add(new ChildNumber(ChildNumber.HARDENED_BIT));
 
       DeterministicKey trezorRootNode = HDKeyDerivation.createRootNodeWithPrivateKey(ImmutableList.copyOf(trezorRootNodePathList), seed);
-      log.debug("Creating Trezor soft wallet with root node with path {}", trezorRootNode.getPath());
+      log.debug("Creating Trezor clone soft wallet with root node with path {}", trezorRootNode.getPath());
 
       // Create a KeyCrypter to encrypt the waller
       KeyCrypterScrypt keyCrypterScrypt = new KeyCrypterScrypt(EncryptedFileReaderWriter.makeScryptParameters(WalletManager.SCRYPT_SALT));
@@ -757,7 +765,7 @@ public enum WalletManager implements WalletEventListener {
 
     // Remember the current soft wallet root
     if (WalletType.MBHD_SOFT_WALLET == walletSummary.getWalletType() ||
-            WalletType.MBHD_SOFT_WALLET_BIP32 == walletSummary.getWalletType() ||
+      WalletType.MBHD_SOFT_WALLET_BIP32 == walletSummary.getWalletType() ||
       WalletType.TREZOR_SOFT_WALLET == walletSummary.getWalletType()) {
       if (Configurations.currentConfiguration != null) {
         Configurations.currentConfiguration.getWallet().setLastSoftWalletRoot(walletRoot);
@@ -776,8 +784,6 @@ public enum WalletManager implements WalletEventListener {
     backupService.rememberWalletSummaryAndPasswordForRollingBackup(walletSummary, walletSummary.getWalletPassword().getPassword());
     backupService.rememberWalletIdAndPasswordForLocalZipBackup(walletSummary.getWalletId(), walletSummary.getWalletPassword().getPassword());
     backupService.rememberWalletIdAndPasswordForCloudZipBackup(walletSummary.getWalletId(), walletSummary.getWalletPassword().getPassword());
-
-    log.debug("Wallet:\n{}\n", walletSummary.getWallet());
 
     // Check if the wallet needs to synch (not required during FEST tests)
     if (performSync) {
@@ -818,14 +824,17 @@ public enum WalletManager implements WalletEventListener {
             "Wallet lastBlockSeenHeight: {}, lastSeenBlockTime: {}, earliestKeyCreationTime: {}",
             walletBlockHeight,
             walletLastSeenBlockTime,
-            walletBeingReturned.getEarliestKeyCreationTime());
+            new DateTime(walletBeingReturned.getEarliestKeyCreationTime() * 1000));
 
           // See if the bitcoinNetworkService already has an open blockstore
           blockStore = bitcoinNetworkService.getBlockStore();
 
           if (blockStore == null) {
             // Open the blockstore with no checkpointing (this is to get the chain height)
-            blockStore = bitcoinNetworkService.openBlockStore(InstallationManager.getOrCreateApplicationDataDirectory(), Optional.<Date>absent());
+            blockStore = bitcoinNetworkService.openBlockStore(
+              InstallationManager.getOrCreateApplicationDataDirectory(),
+              Optional.<DateTime>absent()
+            );
           }
           log.debug("blockStore = {}", blockStore);
 
@@ -837,9 +846,16 @@ public enum WalletManager implements WalletEventListener {
           }
           log.debug("The blockStore is at height {}", blockStoreBlockHeight);
 
+          boolean keyCreationTimeIsInThePast = false;
+          if (walletBeingReturned.getEarliestKeyCreationTime() != -1) {
+            if (walletBeingReturned.getEarliestKeyCreationTime() < Dates.nowInSeconds() - ALLOWABLE_TIME_DELTA) {
+              keyCreationTimeIsInThePast = true;
+            }
+          }
+
           // If wallet and block store match or wallet is brand new use regular sync
           if ((walletBlockHeight > 0 && walletBlockHeight == blockStoreBlockHeight) ||
-                  walletLastSeenBlockTime == null) {
+            (walletLastSeenBlockTime == null && !keyCreationTimeIsInThePast)) {
             // Regular sync is ok - no need to use checkpoints
             log.debug("Will perform a regular sync");
             performRegularSync = true;
@@ -859,36 +875,54 @@ public enum WalletManager implements WalletEventListener {
         }
 
         if (performRegularSync) {
-          synchroniseWallet(Optional.<Date>absent());
+          synchroniseWallet(Optional.<DateTime>absent());
         } else {
-          // Work out the date to sync from from the last block seen, the earliest key creation date and the earliest HD wallet date
-          DateTime syncDate = null;
-
-          if (walletBeingReturned.getLastBlockSeenTime() != null) {
-            syncDate = new DateTime(walletBeingReturned.getLastBlockSeenTime());
-          }
-          if (walletBeingReturned.getEarliestKeyCreationTime() != -1) {
-            DateTime keyCreationTime = new DateTime(walletBeingReturned.getEarliestKeyCreationTime() * 1000);
-            if (syncDate == null) {
-              syncDate = keyCreationTime;
-            } else {
-              syncDate = keyCreationTime.isBefore(syncDate) ? syncDate : keyCreationTime;
-            }
-          }
-
-          DateTime earliestHDWalletDate = DateTime.parse(EARLIEST_HD_WALLET_DATE);
-
-          if (syncDate == null || syncDate.isBefore(earliestHDWalletDate)) {
-            syncDate = earliestHDWalletDate;
-          }
-
-          log.debug("Syncing wallet from date {}", syncDate);
-          if (syncDate != null) {
-            synchroniseWallet(Optional.of(syncDate.toDate()));
-          }
+          // Work out the replay date based on the last block seen, the earliest key creation date and the earliest HD wallet date
+          DateTime replayDate = calculateReplayDateTime(walletBeingReturned);
+          synchroniseWallet(Optional.of(replayDate));
         }
       }
     }
+  }
+
+  /**
+   * @param walletBeingReturned The wallet requiring replay
+   *
+   * @return The most appropriate date time to being replay
+   */
+  private DateTime calculateReplayDateTime(Wallet walletBeingReturned) {
+
+    DateTime replayDateTime = null;
+
+    // Start with the last block seen
+    if (walletBeingReturned.getLastBlockSeenTime() != null) {
+      replayDateTime = new DateTime(walletBeingReturned.getLastBlockSeenTime());
+    }
+
+    // Override with the earliest key creation date
+    // Expect:
+    // 0 for ECKey keys created before timestamp (triggers epoch) or
+    // timestamp of "now" or "earliest key creation" in seconds since epoch
+    long earliestKeyCreationSeconds = walletBeingReturned.getEarliestKeyCreationTime();
+    if (earliestKeyCreationSeconds >= 0) {
+      DateTime earliestKeyCreationDateTime = new DateTime(earliestKeyCreationSeconds * 1000); // Using seconds
+      if (replayDateTime == null) {
+        replayDateTime = earliestKeyCreationDateTime;
+      } else {
+        // Do not go further back than earliest key creation date (0 will trigger epoch which gets overridden later)
+        replayDateTime = replayDateTime.isBefore(earliestKeyCreationDateTime) ? earliestKeyCreationDateTime : replayDateTime;
+      }
+    }
+
+    // Override with earliest HD wallet date (shared with other wallets)
+    DateTime earliestHDWalletDate = DateTime.parse(EARLIEST_HD_WALLET_DATE);
+    if (replayDateTime == null || replayDateTime.isBefore(earliestHDWalletDate)) {
+      // Do not go further back than earliest HD wallet (this avoids epoch)
+      replayDateTime = earliestHDWalletDate;
+    }
+
+    // Cannot be null
+    return replayDateTime;
   }
 
   /**
@@ -933,7 +967,8 @@ public enum WalletManager implements WalletEventListener {
     inferWalletType(wallet);
 
     // Writing out a wallet to a clear text file is security risk
-    log.trace("Wallet loaded OK:\n{}\n", wallet);
+    // Do not do it except for debug
+    // log.debug("Wallet loaded OK:\n{}\n", wallet);
 
     return wallet;
   }
@@ -1086,32 +1121,39 @@ public enum WalletManager implements WalletEventListener {
     }
   }
 
-  private void synchroniseWallet(final Optional<Date> syncDateOptional) {
-    log.debug("Synchronise wallet called with syncDate {}", syncDateOptional);
+  /**
+   * @param replayDate The date from which to replay the download (absent means no checkpoints)
+   */
+  private void synchroniseWallet(final Optional<DateTime> replayDate) {
 
     if (walletExecutorService == null) {
       walletExecutorService = SafeExecutors.newSingleThreadExecutor("sync-wallet");
     }
 
     // Start the Bitcoin network synchronization operation
-    ListenableFuture future = walletExecutorService.submit(
+    ListenableFuture<Boolean> future = walletExecutorService.submit(
       new Callable<Boolean>() {
 
         @Override
         public Boolean call() throws Exception {
-          log.debug("synchroniseWallet  called with replay date {}", syncDateOptional);
+          log.debug("Synchronizing wallet with replay date '{}'", replayDate.orNull());
 
-          // Replay wallet - this also bounces the Bitcoin network connection
-          CoreServices.getOrCreateBitcoinNetworkService().replayWallet(InstallationManager.getOrCreateApplicationDataDirectory(), syncDateOptional);
+          // Replay wallet using fast catch up without clearing mempool (not a repair scenario)
+          CoreServices.getOrCreateBitcoinNetworkService().replayWallet(
+            InstallationManager.getOrCreateApplicationDataDirectory(),
+            replayDate,
+            true,
+            false
+          );
           return true;
 
         }
 
       });
     Futures.addCallback(
-      future, new FutureCallback() {
+      future, new FutureCallback<Boolean>() {
         @Override
-        public void onSuccess(@Nullable Object result) {
+        public void onSuccess(@Nullable Boolean result) {
           // Do nothing this just means that the block chain download has begun
           log.debug("Sync has begun");
 
@@ -1203,11 +1245,11 @@ public enum WalletManager implements WalletEventListener {
   }
 
   /**
-   *
    * <p>This list contains MBHD soft wallets and Trezor soft wallets</p>
-   * @param localeOptional the locale to sort results by
-   * @return A list of soft wallet summaries based on the current application directory contents (never null), ordered by wallet name
    *
+   * @param localeOptional the locale to sort results by
+   *
+   * @return A list of soft wallet summaries based on the current application directory contents (never null), ordered by wallet name
    */
   public static List<WalletSummary> getSoftWalletSummaries(final Optional<Locale> localeOptional) {
 
@@ -1218,27 +1260,28 @@ public enum WalletManager implements WalletEventListener {
 
     for (WalletSummary walletSummary : allWalletSummaries) {
       if (WalletType.MBHD_SOFT_WALLET == walletSummary.getWalletType()
-              || WalletType.MBHD_SOFT_WALLET_BIP32 == walletSummary.getWalletType()
+        || WalletType.MBHD_SOFT_WALLET_BIP32 == walletSummary.getWalletType()
         || WalletType.TREZOR_SOFT_WALLET == walletSummary.getWalletType()) {
         softWalletSummaries.add(walletSummary);
       }
     }
 
     // Sort by name of wallet
-    Collections.sort(softWalletSummaries, new Comparator<WalletSummary>() {
-      @Override
-      public int compare(WalletSummary me, WalletSummary other) {
-        String myName = me.getName();
-        if (myName == null) {
-          myName = "";
+    Collections.sort(
+      softWalletSummaries, new Comparator<WalletSummary>() {
+        @Override
+        public int compare(WalletSummary me, WalletSummary other) {
+          String myName = me.getName();
+          if (myName == null) {
+            myName = "";
+          }
+          String otherName = other.getName();
+          if (otherName == null) {
+            otherName = "";
+          }
+          return Collators.newCollator(localeOptional).compare(myName, otherName);
         }
-        String otherName = other.getName();
-        if (otherName == null) {
-          otherName = "";
-        }
-        return Collators.newCollator(localeOptional).compare(myName, otherName);
-      }
-    });
+      });
 
     return softWalletSummaries;
   }
@@ -1311,7 +1354,7 @@ public enum WalletManager implements WalletEventListener {
 
 
   /**
-   * Get the balance of the current wallet (this does not include a decrement due to the BRIT fees)
+   * Get the spendable balance of the current wallet (this does not include a decrement due to the BRIT fees)
    * This is Optional.absent() if there is no wallet
    */
   public Optional<Coin> getCurrentWalletBalance() {
@@ -1326,13 +1369,27 @@ public enum WalletManager implements WalletEventListener {
   }
 
   /**
+   * Get the balance of the current wallet including unconfirmed (this does not include a decrement due to the BRIT fees)
+   * This is Optional.absent() if there is no wallet
+   */
+  public Optional<Coin> getCurrentWalletBalanceWithUnconfirmed() {
+    Optional<WalletSummary> currentWalletSummary = getCurrentWalletSummary();
+    if (currentWalletSummary.isPresent()) {
+      // Use the real wallet data
+      return Optional.of(currentWalletSummary.get().getWallet().getBalance(Wallet.BalanceType.ESTIMATED));
+    } else {
+      // Unknown at this time
+      return Optional.absent();
+    }
+  }
+
+  /**
    * @param includeOneExtraFee include an extra fee to include a tx currently being constructed that isn't in the wallet yet
    *
    * @return The BRIT fee state for the current wallet - this includes things like how much is
    * currently owed to BRIT
    */
   public Optional<FeeState> calculateBRITFeeState(boolean includeOneExtraFee) {
-
     if (feeService == null) {
       feeService = CoreServices.createFeeService();
     }
@@ -1469,7 +1526,6 @@ public enum WalletManager implements WalletEventListener {
    */
   public static WalletSummary getOrCreateWalletSummary(File walletDirectory, WalletId walletId) {
 
-    log.debug("getOrCreateWalletSummary called");
     verifyWalletDirectory(walletDirectory);
 
     Optional<WalletSummary> walletSummaryOptional = Optional.absent();
@@ -1504,9 +1560,10 @@ public enum WalletManager implements WalletEventListener {
   /**
    * Write the encrypted wallet credentials and backup AES key to the wallet configuration.
    * You probably want to save it afterwards with an updateSummary
+   *
    * @param walletSummary The wallet summary to write the encrypted details for
-   * @param secret The secret used to derive the AES encryption key. This is typically created deterministically from the wallet words
-   * @param password The password you want to store encrypted
+   * @param secret        The secret used to derive the AES encryption key. This is typically created deterministically from the wallet words
+   * @param password      The password you want to store encrypted
    */
   public static void writeEncryptedPasswordAndBackupKey(WalletSummary walletSummary, byte[] secret, String password) throws NoSuchAlgorithmException {
 
@@ -1515,16 +1572,16 @@ public enum WalletManager implements WalletEventListener {
     Preconditions.checkNotNull(password, "'password' must be present");
 
     // Save the wallet credentials, AES encrypted with a key derived from the wallet secret
-    KeyParameter secretDerivedAESKey = org.multibit.hd.core.crypto.AESUtils.createAESKey(secret, SCRYPT_SALT);
+    KeyParameter secretDerivedAESKey = org.multibit.commons.crypto.AESUtils.createAESKey(secret, SCRYPT_SALT);
     byte[] passwordBytes = password.getBytes(Charsets.UTF_8);
 
     byte[] paddedPasswordBytes = padPasswordBytes(passwordBytes);
-    byte[] encryptedPaddedPassword = org.multibit.hd.brit.crypto.AESUtils.encrypt(paddedPasswordBytes, secretDerivedAESKey, AES_INITIALISATION_VECTOR);
+    byte[] encryptedPaddedPassword = AESUtils.encrypt(paddedPasswordBytes, secretDerivedAESKey, AES_INITIALISATION_VECTOR);
     walletSummary.setEncryptedPassword(encryptedPaddedPassword);
 
     // Save the backupAESKey, AES encrypted with a key generated from the wallet password
-    KeyParameter walletPasswordDerivedAESKey = org.multibit.hd.core.crypto.AESUtils.createAESKey(passwordBytes, SCRYPT_SALT);
-    byte[] encryptedBackupAESKey = org.multibit.hd.brit.crypto.AESUtils.encrypt(secretDerivedAESKey.getKey(), walletPasswordDerivedAESKey, AES_INITIALISATION_VECTOR);
+    KeyParameter walletPasswordDerivedAESKey = org.multibit.commons.crypto.AESUtils.createAESKey(passwordBytes, SCRYPT_SALT);
+    byte[] encryptedBackupAESKey = AESUtils.encrypt(secretDerivedAESKey.getKey(), walletPasswordDerivedAESKey, AES_INITIALISATION_VECTOR);
     walletSummary.setEncryptedBackupKey(encryptedBackupAESKey);
   }
 
@@ -1780,6 +1837,10 @@ public enum WalletManager implements WalletEventListener {
   public void shutdownNow(ShutdownEvent.ShutdownType shutdownType) {
 
     log.debug("Received shutdown: {}", shutdownType.name());
+
+    // Writing out a wallet to a clear text file is security risk
+    // Do not do it except for debug
+    // log.debug("Wallet at shutdown:\n{}\n", getCurrentWalletSummary().isPresent() ? getCurrentWalletSummary().get().getWallet() : "");
     currentWalletSummary = Optional.absent();
 
   }
@@ -1808,8 +1869,11 @@ public enum WalletManager implements WalletEventListener {
         walletSummary.getWallet().saveToFile(currentWalletFile);
 
         File encryptedAESCopy = EncryptedFileReaderWriter.makeAESEncryptedCopyAndDeleteOriginal(currentWalletFile, walletSummary.getWalletPassword().getPassword());
-        log.debug("Created AES encrypted wallet as file:\n'{}'\nSize: {} bytes", encryptedAESCopy.getAbsolutePath(), encryptedAESCopy.length());
-
+        if (encryptedAESCopy == null) {
+          log.debug("Did not create AES encrypted wallet");
+        } else {
+          log.debug("Created AES encrypted wallet as file:\n'{}'\nSize: {} bytes", encryptedAESCopy.getAbsolutePath(), encryptedAESCopy.length());
+        }
         BackupService backupService = CoreServices.getOrCreateBackupService();
         backupService.rememberWalletSummaryAndPasswordForRollingBackup(walletSummary, walletSummary.getWalletPassword().getPassword());
         backupService.rememberWalletIdAndPasswordForLocalZipBackup(walletSummary.getWalletId(), walletSummary.getWalletPassword().getPassword());
@@ -1841,8 +1905,5 @@ public enum WalletManager implements WalletEventListener {
     } else {
       log.info("No current wallet summary to provide wallet");
     }
-
   }
-
-
 }

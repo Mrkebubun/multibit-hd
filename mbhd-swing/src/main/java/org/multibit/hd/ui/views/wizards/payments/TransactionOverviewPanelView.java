@@ -1,13 +1,13 @@
 package org.multibit.hd.ui.views.wizards.payments;
 
-import org.bitcoinj.core.Address;
-import org.bitcoinj.core.Coin;
 import com.google.common.base.Joiner;
 import com.google.common.base.Optional;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import net.miginfocom.swing.MigLayout;
+import org.bitcoinj.core.Address;
+import org.bitcoinj.core.Coin;
 import org.joda.time.DateTime;
 import org.multibit.hd.core.dto.Contact;
 import org.multibit.hd.core.dto.PaymentData;
@@ -17,6 +17,7 @@ import org.multibit.hd.core.managers.WalletManager;
 import org.multibit.hd.core.services.ContactService;
 import org.multibit.hd.core.services.CoreServices;
 import org.multibit.hd.ui.MultiBitUI;
+import org.multibit.hd.ui.events.view.ViewEvents;
 import org.multibit.hd.ui.gravatar.Gravatars;
 import org.multibit.hd.ui.languages.Languages;
 import org.multibit.hd.ui.languages.MessageKey;
@@ -28,6 +29,7 @@ import org.multibit.hd.ui.views.fonts.AwesomeIcon;
 import org.multibit.hd.ui.views.themes.Themes;
 import org.multibit.hd.ui.views.wizards.AbstractWizard;
 import org.multibit.hd.ui.views.wizards.AbstractWizardPanelView;
+import org.multibit.hd.ui.views.wizards.WizardButton;
 
 import javax.swing.*;
 import java.awt.image.BufferedImage;
@@ -41,7 +43,6 @@ import java.util.List;
  * </ul>
  *
  * @since 0.0.1
- *
  */
 public class TransactionOverviewPanelView extends AbstractWizardPanelView<PaymentsWizardModel, TransactionOverviewPanelModel> {
 
@@ -60,7 +61,7 @@ public class TransactionOverviewPanelView extends AbstractWizardPanelView<Paymen
    */
   public TransactionOverviewPanelView(AbstractWizard<PaymentsWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.TRANSACTION_OVERVIEW, AwesomeIcon.FILE_TEXT_O);
+    super(wizard, panelName, AwesomeIcon.FILE_TEXT_O, MessageKey.TRANSACTION_OVERVIEW);
 
   }
 
@@ -80,8 +81,8 @@ public class TransactionOverviewPanelView extends AbstractWizardPanelView<Paymen
     contentPanel.setLayout(
       new MigLayout(
         Panels.migXYLayout(),
-        "[]10[][][]", // Column constraints
-        "[]10[]10[]10[]" // Row constraints
+        "[]10[]10[60:60:60]", // Column constraints
+        "[]10[]10[]10[]10[]" // Row constraints
       ));
 
     // Apply the theme
@@ -110,23 +111,23 @@ public class TransactionOverviewPanelView extends AbstractWizardPanelView<Paymen
 
     // Recipient is at the top for visual consistency with other screens
     // Answers first question "Who was this for?"
-    contentPanel.add(recipientLabel, "growx");
-    contentPanel.add(recipientValue, "growx,span 2");
+    contentPanel.add(recipientLabel);
+    contentPanel.add(recipientValue);
     contentPanel.add(recipientImageLabel, "shrink,align center,wrap");
 
     // Status answers "Did it arrive?"
     contentPanel.add(statusLabel);
-    contentPanel.add(statusValue, "span 3,wrap");
+    contentPanel.add(statusValue, "span 2, wrap");
 
     // Date answers "When did it arrive?"
     contentPanel.add(dateLabel);
-    contentPanel.add(dateValue, "wrap");
+    contentPanel.add(dateValue, "span 2, wrap");
 
     contentPanel.add(typeLabel);
-    contentPanel.add(typeValue, "growx,wrap");
+    contentPanel.add(typeValue, "span 2, wrap");
 
     contentPanel.add(descriptionLabel);
-    contentPanel.add(descriptionValue, "growx,span 3,wrap");
+    contentPanel.add(descriptionValue, "span 2,wrap");
   }
 
   @Override
@@ -136,18 +137,15 @@ public class TransactionOverviewPanelView extends AbstractWizardPanelView<Paymen
 
   @Override
   public void afterShow() {
+    SwingUtilities.invokeLater(new Runnable() {
+      @Override
+      public void run() {
+        getNextButton().requestFocusInWindow();
+      }
+    });
 
-    SwingUtilities.invokeLater(
-      new Runnable() {
-        @Override
-        public void run() {
-          getNextButton().requestFocusInWindow();
-          getNextButton().setEnabled(true);
-        }
-      });
-
+    ViewEvents.fireWizardButtonEnabledEvent(getPanelName(), WizardButton.NEXT, true);
     update();
-
   }
 
   @Override
@@ -156,7 +154,6 @@ public class TransactionOverviewPanelView extends AbstractWizardPanelView<Paymen
   }
 
   public void update() {
-
     PaymentData paymentData = getWizardModel().getPaymentData();
 
     if (paymentData != null) {
@@ -168,8 +165,7 @@ public class TransactionOverviewPanelView extends AbstractWizardPanelView<Paymen
       if (paymentData instanceof TransactionData) {
         TransactionData transactionData = (TransactionData) paymentData;
 
-        if (transactionData.getAmountCoin().compareTo(Coin.ZERO) >= 0) {
-
+        if (transactionData.getAmountCoin().or(Coin.ZERO).compareTo(Coin.ZERO) >= 0) {
           // Received bitcoin
           recipientValue.setText(Languages.safeText(MessageKey.THIS_BITCOIN_WAS_SENT_TO_YOU));
           recipientValue.setRows(1);
@@ -197,7 +193,7 @@ public class TransactionOverviewPanelView extends AbstractWizardPanelView<Paymen
               default:
                 // More than one match
                 recipientValue.setText(Joiner.on("\n").join(outputAddresses));
-                recipientValue.setRows(outputAddresses.size() <=5 ? outputAddresses.size() : 5);
+                recipientValue.setRows(outputAddresses.size() <= 5 ? outputAddresses.size() : 5);
                 break;
             }
           }
@@ -216,7 +212,7 @@ public class TransactionOverviewPanelView extends AbstractWizardPanelView<Paymen
    */
   private Optional<Contact> matchContact(Collection<Address> addresses) {
 
-    ContactService contactService = CoreServices.getOrCreateContactService(WalletManager.INSTANCE.getCurrentWalletSummary().get().getWalletId());
+    ContactService contactService = CoreServices.getOrCreateContactService(WalletManager.INSTANCE.getCurrentWalletSummary().get().getWalletPassword());
     List<Contact> allContacts = contactService.allContacts();
 
     Contact matchedContact = null;

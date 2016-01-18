@@ -6,10 +6,11 @@ import com.google.common.collect.Sets;
 import com.google.common.eventbus.EventBus;
 import org.bitcoinj.core.Coin;
 import org.multibit.hd.core.dto.RAGStatus;
-import org.multibit.hd.core.exceptions.ExceptionHandler;
+import org.multibit.hd.core.error_reporting.ExceptionHandler;
 import org.multibit.hd.ui.events.controller.ShowScreenEvent;
 import org.multibit.hd.ui.models.AlertModel;
 import org.multibit.hd.ui.views.ViewKey;
+import org.multibit.hd.ui.views.components.Panels;
 import org.multibit.hd.ui.views.components.wallet_detail.WalletDetail;
 import org.multibit.hd.ui.views.screens.Screen;
 import org.multibit.hd.ui.views.wizards.AbstractWizardModel;
@@ -28,7 +29,7 @@ import java.util.Set;
  * </ul>
  * <p>An application event is a high level event with specific semantics. Normally a
  * low level event (such as a mouse click) will initiate it.</p>
- *
+ * <p/>
  * <p>It is expected that ViewEvents will interact with Swing components and as such is
  * expected to execute on the EDT. This cannot be provided directly within the method
  * by wrapping since the semantics of the calling code may require synchronous execution
@@ -51,7 +52,6 @@ public class ViewEvents {
    * Keep track of the Guava event bus subscribers for a clean shutdown
    */
   private static final Set<Object> viewEventBusSubscribers = Sets.newHashSet();
-
 
   /**
    * Utilities have a private constructor
@@ -100,8 +100,6 @@ public class ViewEvents {
         log.warn("Unexpected failure to unregister");
       }
       viewEventBusSubscribers.remove(subscriber);
-    } else {
-      log.warn("Subscriber already unregistered: " + subscriber.getClass().getSimpleName());
     }
 
   }
@@ -131,30 +129,32 @@ public class ViewEvents {
    * @param rateProvider The exchange rate provider (e.g. "Bitstamp")
    */
   public static void fireBalanceChangedEvent(
-    final Coin coinBalance,
-    final BigDecimal localBalance,
-    final Optional<String> rateProvider
+          final Coin coinBalance,
+          final Coin coinWithUnconfirmedBalance,
+          final BigDecimal localBalance,
+          final Optional<String> rateProvider
   ) {
 
     log.trace("Firing 'balance changed' event");
     if (SwingUtilities.isEventDispatchThread()) {
       viewEventBus.post(
-        new BalanceChangedEvent(
-          coinBalance,
-          localBalance,
-          rateProvider
-        ));
+              new BalanceChangedEvent(
+                      coinBalance,
+                      coinWithUnconfirmedBalance,
+                      localBalance,
+                      rateProvider
+              ));
     } else {
       SwingUtilities.invokeLater(new Runnable() {
         @Override
         public void run() {
-          log.warn("This event must be on the Swing event dispatch thread (EDT). Fix this to avoid broken UI.");
           viewEventBus.post(
-            new BalanceChangedEvent(
-              coinBalance,
-              localBalance,
-              rateProvider
-            ));
+                  new BalanceChangedEvent(
+                          coinBalance,
+                          coinWithUnconfirmedBalance,
+                          localBalance,
+                          rateProvider
+                  ));
         }
       });
     }
@@ -176,7 +176,6 @@ public class ViewEvents {
       SwingUtilities.invokeLater(new Runnable() {
         @Override
         public void run() {
-          log.warn("This event must be on the Swing event dispatch thread (EDT). Fix this to avoid broken UI.");
           viewEventBus.post(new SystemStatusChangedEvent(localisedMessage, severity));
         }
       });
@@ -199,7 +198,6 @@ public class ViewEvents {
       SwingUtilities.invokeLater(new Runnable() {
         @Override
         public void run() {
-          log.warn("This event must be on the Swing event dispatch thread (EDT). Fix this to avoid broken UI.");
           viewEventBus.post(new ProgressChangedEvent(localisedMessage, percent));
         }
       });
@@ -221,7 +219,6 @@ public class ViewEvents {
       SwingUtilities.invokeLater(new Runnable() {
         @Override
         public void run() {
-          log.warn("This event must be on the Swing event dispatch thread (EDT). Fix this to avoid broken UI.");
           viewEventBus.post(new AlertAddedEvent(alertModel));
         }
       });
@@ -241,7 +238,6 @@ public class ViewEvents {
       SwingUtilities.invokeLater(new Runnable() {
         @Override
         public void run() {
-          log.warn("This event must be on the Swing event dispatch thread (EDT). Fix this to avoid broken UI.");
           viewEventBus.post(new SwitchWalletEvent());
         }
       });
@@ -261,7 +257,6 @@ public class ViewEvents {
       SwingUtilities.invokeLater(new Runnable() {
         @Override
         public void run() {
-          log.warn("This event must be on the Swing event dispatch thread (EDT). Fix this to avoid broken UI.");
           viewEventBus.post(new AlertRemovedEvent());
         }
       });
@@ -281,7 +276,6 @@ public class ViewEvents {
       SwingUtilities.invokeLater(new Runnable() {
         @Override
         public void run() {
-          log.warn("This event must be on the Swing event dispatch thread (EDT). Fix this to avoid broken UI.");
           viewEventBus.post(new WalletDetailChangedEvent(walletDetail));
         }
       });
@@ -297,9 +291,9 @@ public class ViewEvents {
    * @param enabled      True if the button should be enabled
    */
   public static void fireWizardButtonEnabledEvent(
-    final String panelName,
-    final WizardButton wizardButton,
-    final boolean enabled
+          final String panelName,
+          final WizardButton wizardButton,
+          final boolean enabled
   ) {
 
     log.trace("Firing 'wizard button enabled {}' event: {}", panelName, enabled);
@@ -309,7 +303,6 @@ public class ViewEvents {
       SwingUtilities.invokeLater(new Runnable() {
         @Override
         public void run() {
-          log.warn("This event must be on the Swing event dispatch thread (EDT). Fix this to avoid broken UI.");
           viewEventBus.post(new WizardButtonEnabledEvent(panelName, wizardButton, enabled));
         }
       });
@@ -324,9 +317,9 @@ public class ViewEvents {
    * @param isExitCancel True if this hide event comes as a result of an exit or cancel
    */
   public static void fireWizardHideEvent(
-    final String panelName,
-    final AbstractWizardModel wizardModel,
-    final boolean isExitCancel
+          final String panelName,
+          final AbstractWizardModel wizardModel,
+          final boolean isExitCancel
   ) {
 
     log.trace("Firing 'wizard hide' event");
@@ -336,7 +329,6 @@ public class ViewEvents {
       SwingUtilities.invokeLater(new Runnable() {
         @Override
         public void run() {
-          log.warn("This event must be on the Swing event dispatch thread (EDT). Fix this to avoid broken UI.");
           viewEventBus.post(new WizardHideEvent(panelName, wizardModel, isExitCancel));
         }
       });
@@ -359,7 +351,6 @@ public class ViewEvents {
       SwingUtilities.invokeLater(new Runnable() {
         @Override
         public void run() {
-          log.warn("This event must be on the Swing event dispatch thread (EDT). Fix this to avoid broken UI.");
           viewEventBus.post(new WizardPopoverHideEvent(panelName, isExitCancel));
         }
       });
@@ -376,13 +367,16 @@ public class ViewEvents {
   public static void fireWizardDeferredHideEvent(final String panelName, final boolean isExitCancel) {
 
     log.trace("Firing 'wizard deferred hide' event");
+
+    // Prevent any light box creation activity ahead of this process
+    Panels.setDeferredHideEventInProgress(true);
+
     if (SwingUtilities.isEventDispatchThread()) {
       viewEventBus.post(new WizardDeferredHideEvent(panelName, isExitCancel));
     } else {
       SwingUtilities.invokeLater(new Runnable() {
         @Override
         public void run() {
-          log.warn("This event must be on the Swing event dispatch thread (EDT). Fix this to avoid broken UI.");
           viewEventBus.post(new WizardDeferredHideEvent(panelName, isExitCancel));
         }
       });
@@ -405,7 +399,6 @@ public class ViewEvents {
       SwingUtilities.invokeLater(new Runnable() {
         @Override
         public void run() {
-          log.warn("This event must be on the Swing event dispatch thread (EDT). Fix this to avoid broken UI.");
           viewEventBus.post(new ComponentChangedEvent(panelName, componentModel));
         }
       });
@@ -428,7 +421,6 @@ public class ViewEvents {
       SwingUtilities.invokeLater(new Runnable() {
         @Override
         public void run() {
-          log.warn("This event must be on the Swing event dispatch thread (EDT). Fix this to avoid broken UI.");
           viewEventBus.post(new VerificationStatusChangedEvent(panelName, status));
         }
       });
@@ -451,12 +443,10 @@ public class ViewEvents {
       SwingUtilities.invokeLater(new Runnable() {
         @Override
         public void run() {
-          log.warn("This event must be on the Swing event dispatch thread (EDT). Fix this to avoid broken UI.");
           viewEventBus.post(new ViewChangedEvent(viewKey, visible));
         }
       });
     }
-
   }
 
   /**
@@ -465,7 +455,6 @@ public class ViewEvents {
    * @param detailScreen The screen to show
    */
   public static void fireShowDetailScreenEvent(final Screen detailScreen) {
-
     log.trace("Firing 'show detail screen' event");
     if (SwingUtilities.isEventDispatchThread()) {
       viewEventBus.post(new ShowScreenEvent(detailScreen));
@@ -473,11 +462,9 @@ public class ViewEvents {
       SwingUtilities.invokeLater(new Runnable() {
         @Override
         public void run() {
-          log.warn("This event must be on the Swing event dispatch thread (EDT). Fix this to avoid broken UI.");
           viewEventBus.post(new ShowScreenEvent(detailScreen));
         }
       });
     }
   }
-
 }

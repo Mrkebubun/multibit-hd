@@ -46,16 +46,17 @@ public class EnterYesNoView extends AbstractComponentView<EnterYesNoModel> {
   @Override
   public JPanel newComponentPanel() {
 
-    panel = Panels.newRoundedPanel(new MigLayout(
-      "fill,insets 10",
-      "[][]",
-      "[]"
-    ));
+    panel = Panels.newRoundedPanel(
+      new MigLayout(
+        "fill,insets 10",
+        "[][]",
+        "[]"
+      ));
 
     panelCloseButton = Buttons.newPanelCloseButton(getClosePopoverAction());
 
     // Ensure it is accessible
-    panelCloseButton.setName("popover_"+ MessageKey.CLOSE.getKey());
+    panelCloseButton.setName("popover_" + MessageKey.CLOSE.getKey());
 
     panel.add(panelCloseButton, "span 2,align right,shrink,wrap");
     panel.add(Labels.newDataEnteredNote(), "grow,push,span 2,wrap");
@@ -65,6 +66,8 @@ public class EnterYesNoView extends AbstractComponentView<EnterYesNoModel> {
 
     // Set minimum size
     panel.setSize(MultiBitUI.POPOVER_MIN_WIDTH, MultiBitUI.POPOVER_MIN_HEIGHT);
+
+    // Using ESC to close the panel should be used here due UI requiring a clear Yes/No statement
 
     return panel;
 
@@ -89,13 +92,8 @@ public class EnterYesNoView extends AbstractComponentView<EnterYesNoModel> {
 
         Panels.hideLightBoxPopoverIfPresent();
 
-        SwingUtilities.invokeLater(new Runnable() {
-          @Override
-          public void run() {
-            // Issue the wizard popover hide event (not exiting but confirming)
-            ViewEvents.fireWizardPopoverHideEvent(getModel().get().getPanelName(), false);
-          }
-        });
+        // Issue the wizard popover hide event (not exiting but confirming)
+        ViewEvents.fireWizardPopoverHideEvent(getModel().get().getPanelName(), false);
       }
 
     };
@@ -115,13 +113,8 @@ public class EnterYesNoView extends AbstractComponentView<EnterYesNoModel> {
 
         Panels.hideLightBoxPopoverIfPresent();
 
-        SwingUtilities.invokeLater(new Runnable() {
-          @Override
-          public void run() {
-            // Issue the wizard popover hide event (exit/cancel)
-            ViewEvents.fireWizardPopoverHideEvent(getModel().get().getPanelName(), true);
-          }
-        });
+        // Issue the wizard popover hide event (exit/cancel)
+        ViewEvents.fireWizardPopoverHideEvent(getModel().get().getPanelName(), true);
       }
 
     };
@@ -141,13 +134,8 @@ public class EnterYesNoView extends AbstractComponentView<EnterYesNoModel> {
 
         Panels.hideLightBoxPopoverIfPresent();
 
-        SwingUtilities.invokeLater(new Runnable() {
-          @Override
-          public void run() {
-            // Issue the wizard popover hide event (exit/cancel)
-            ViewEvents.fireWizardPopoverHideEvent(getModel().get().getPanelName(), true);
-          }
-        });
+        // Issue the wizard popover hide event (exit/cancel)
+        ViewEvents.fireWizardPopoverHideEvent(getModel().get().getPanelName(), true);
       }
 
     };

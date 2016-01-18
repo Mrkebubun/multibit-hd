@@ -54,7 +54,7 @@ public class CreateWalletPreparationPanelView extends AbstractWizardPanelView<We
    */
   public CreateWalletPreparationPanelView(AbstractWizard<WelcomeWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.CREATE_WALLET_PREPARATION_TITLE, AwesomeIcon.EDIT);
+    super(wizard, panelName, AwesomeIcon.EDIT, MessageKey.CREATE_WALLET_PREPARATION_TITLE);
 
     // Timer needs to be fairly fast to appear responsive
     timer = new Timer(500, new ActionListener() {
@@ -149,8 +149,8 @@ public class CreateWalletPreparationPanelView extends AbstractWizardPanelView<We
   @Override
   public void fireInitialStateViewEvents() {
 
-    // Disable the finish button
-    ViewEvents.fireWizardButtonEnabledEvent(getPanelName(), WizardButton.FINISH, false);
+    // Disable the Next button
+    ViewEvents.fireWizardButtonEnabledEvent(getPanelName(), WizardButton.NEXT, false);
 
   }
 
@@ -190,6 +190,10 @@ public class CreateWalletPreparationPanelView extends AbstractWizardPanelView<We
         break;
       default:
         timer.stop();
+
+        // Enable the Next button
+        ViewEvents.fireWizardButtonEnabledEvent(getPanelName(), WizardButton.NEXT, true);
+
     }
 
     timerCount++;
@@ -204,6 +208,15 @@ public class CreateWalletPreparationPanelView extends AbstractWizardPanelView<We
     timer.setRepeats(true);
     timer.start();
 
+  }
+
+  @Override
+  public boolean beforeHide(boolean isExitCancel) {
+
+    // Prevent popovers triggering continuously when finished
+    timer.stop();
+
+    return true;
   }
 
 }

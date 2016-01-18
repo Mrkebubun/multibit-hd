@@ -11,6 +11,7 @@ import org.multibit.hd.core.events.ShutdownEvent;
 import org.multibit.hd.core.managers.WalletManager;
 import org.multibit.hd.core.services.CoreServices;
 import org.multibit.hd.core.utils.OSUtils;
+import org.multibit.hd.hardware.core.HardwareWalletService;
 import org.multibit.hd.ui.MultiBitUI;
 import org.multibit.hd.ui.events.view.ViewEvents;
 import org.multibit.hd.ui.languages.Languages;
@@ -21,14 +22,20 @@ import org.multibit.hd.ui.views.fonts.TitleFontDecorator;
 import org.multibit.hd.ui.views.themes.Themes;
 import org.multibit.hd.ui.views.wizards.Wizards;
 import org.multibit.hd.ui.views.wizards.credentials.CredentialsRequestType;
-import org.multibit.hd.ui.views.wizards.welcome.WelcomeWizardMode;
+import org.multibit.hd.core.dto.WalletMode;
 import org.multibit.hd.ui.views.wizards.welcome.WelcomeWizardState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.*;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import java.awt.event.WindowAdapter;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.util.List;
@@ -83,11 +90,11 @@ public class MainView extends JFrame {
     // Add a glass pane which dims the whole screen - used for switch (MainController#handleSwitchWallet)
     // It also absorbs keystrokes and mouse events
     JComponent glassPane = new JComponent() {
-            public void paintComponent(Graphics g) {
-                g.setColor(new Color(0, 0, 0, 50));
-                g.fillRect(0, 0, getWidth(), getHeight());
-                super.paintComponent(g);
-            }
+      public void paintComponent(Graphics g) {
+        g.setColor(new Color(0, 0, 0, 50));
+        g.fillRect(0, 0, getWidth(), getHeight());
+        super.paintComponent(g);
+      }
     };
     glassPane.addKeyListener(new KeyListener() {
       @Override
@@ -173,26 +180,30 @@ public class MainView extends JFrame {
 
   /**
    * <p>Rebuild the contents of the main view based on the current configuration and theme</p>
+   *
+   * @param isLanguageChange True if this refresh is because of a language change
    */
-  public void refresh() {
+  public void refresh(final boolean isLanguageChange) {
     if (SwingUtilities.isEventDispatchThread()) {
-      refreshOnEventThread();
+      refreshOnEventThread(isLanguageChange);
     } else {
       // Start the main view refresh on the EDT
       SwingUtilities.invokeLater(
-              new Runnable() {
-                @Override
-                public void run() {
-                  refreshOnEventThread();
-                }
-              });
+        new Runnable() {
+          @Override
+          public void run() {
+            refreshOnEventThread(isLanguageChange);
+          }
+        });
     }
   }
 
   /**
    * <p>Rebuild the contents of the main view based on the current configuration and theme on the Swing Event thread</p>
+   *
+   * @param isLanguageChange True if this refresh is because of a language change
    */
-  private void refreshOnEventThread() {
+  private void refreshOnEventThread(boolean isLanguageChange) {
 
     Preconditions.checkState(SwingUtilities.isEventDispatchThread(), "Must be in the EDT. Check MainController.");
 
@@ -215,9 +226,6 @@ public class MainView extends JFrame {
       setTitle(Languages.safeText(MessageKey.MULTIBIT_HD_TITLE));
     }
 
-    // Parse the configuration
-    resizeToLastFrameBounds();
-
     // Clear out all the old content
     getContentPane().removeAll();
 
@@ -231,7 +239,11 @@ public class MainView extends JFrame {
 
       // Ensure the wallet balance is propagated out
       if (WalletManager.INSTANCE.getCurrentWalletBalance().isPresent()) {
-        ViewEvents.fireBalanceChangedEvent(WalletManager.INSTANCE.getCurrentWalletBalance().get(), null, Optional.<String>absent());
+        ViewEvents.fireBalanceChangedEvent(
+          WalletManager.INSTANCE.getCurrentWalletBalance().get(),
+          WalletManager.INSTANCE.getCurrentWalletBalanceWithUnconfirmed().get(),
+          null,
+          Optional.<String>absent());
       }
 
       // Catch up on recent events
@@ -243,24 +255,31 @@ public class MainView extends JFrame {
 
       // This section must come after a deferred hide has completed
 
-      // Determine if we are in Trezor mode for the welcome wizard
-      WelcomeWizardMode mode = CredentialsRequestType.TREZOR.equals(credentialsRequestType) ? WelcomeWizardMode.TREZOR: WelcomeWizardMode.STANDARD;
+      // Select the appropriate wallet mode
+      final WalletMode walletMode;
+      if (CredentialsRequestType.HARDWARE.equals(credentialsRequestType)) {
+        Optional<HardwareWalletService> currentHardwareWalletService = CoreServices.getCurrentHardwareWalletService();
+        walletMode = WalletMode.of(currentHardwareWalletService);
+      } else {
+        walletMode = WalletMode.STANDARD;
+      }
 
       // Determine the appropriate starting screen for the welcome wizard
       if (Configurations.currentConfiguration.isLicenceAccepted()) {
 
         // Must have run before so perform some additional checks
-        if (WelcomeWizardMode.TREZOR.equals(mode)) {
-          // Starting with an uninitialised Trezor
-          log.debug("Showing exiting welcome wizard (select wallet)");
-          Panels.showLightBox(Wizards.newExitingWelcomeWizard(WelcomeWizardState.WELCOME_SELECT_WALLET, mode).getWizardScreenHolder());
+        if ((WalletMode.TREZOR == walletMode || WalletMode.KEEP_KEY == walletMode)
+          && !isLanguageChange) {
+          // Starting with an uninitialised hardware wallet
+          log.debug("Showing exiting welcome wizard (select hardware wallet)");
+          Panels.showLightBox(Wizards.newExitingWelcomeWizard(WelcomeWizardState.WELCOME_SELECT_WALLET, walletMode).getWizardScreenHolder());
         } else {
           log.debug("Showing exiting welcome wizard (select language)");
-          Panels.showLightBox(Wizards.newExitingWelcomeWizard(WelcomeWizardState.WELCOME_SELECT_LANGUAGE, mode).getWizardScreenHolder());
+          Panels.showLightBox(Wizards.newExitingWelcomeWizard(WelcomeWizardState.WELCOME_SELECT_LANGUAGE, walletMode).getWizardScreenHolder());
         }
       } else {
         log.debug("Showing exiting welcome wizard (licence agreement)");
-        Panels.showLightBox(Wizards.newExitingWelcomeWizard(WelcomeWizardState.WELCOME_LICENCE, mode).getWizardScreenHolder());
+        Panels.showLightBox(Wizards.newExitingWelcomeWizard(WelcomeWizardState.WELCOME_LICENCE, walletMode).getWizardScreenHolder());
       }
 
     } else if (showExitingCredentialsWizard) {
@@ -286,7 +305,8 @@ public class MainView extends JFrame {
       }
     }
 
-    log.debug("Show UI");
+    // Use Configuration to get the last frame bounds
+    resizeToLastFrameBounds();
 
     if (isCentered) {
       GraphicsDevice defaultScreen = getGraphicsDevices().get(0);
@@ -302,11 +322,14 @@ public class MainView extends JFrame {
       );
     }
 
+    log.debug("Show UI");
     setVisible(true);
+
+    // Repeat the the last frame bounds to overcome bug in Swing setting x=0
+    resizeToLastFrameBounds();
 
     log.debug("Refresh complete");
   }
-
 
   /**
    * @return True if the exiting welcome wizard will be shown on a reset
@@ -386,8 +409,6 @@ public class MainView extends JFrame {
     detailView = new DetailView();
     footerView = new FooterView();
 
-    log.debug("Creating split pane...");
-
     // Create a splitter pane
     JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
 
@@ -447,10 +468,18 @@ public class MainView extends JFrame {
    */
   public void unsubscribe() {
 
-    headerView.unregister();
-    sidebarView.unregister();
-    detailView.unregister();
-    footerView.unregister();
+    if (headerView != null) {
+      headerView.unregister();
+    }
+    if (sidebarView != null) {
+      sidebarView.unregister();
+    }
+    if (detailView != null) {
+      detailView.unregister();
+    }
+    if (footerView != null) {
+      footerView.unregister();
+    }
 
   }
 
@@ -466,8 +495,6 @@ public class MainView extends JFrame {
       String[] lastFrameDimension = frameDimension.split(",");
       if (lastFrameDimension.length == 4) {
 
-        log.debug("Using absolute coordinates");
-
         try {
           int x = Integer.parseInt(lastFrameDimension[0]);
           int y = Integer.parseInt(lastFrameDimension[1]);
@@ -479,8 +506,9 @@ public class MainView extends JFrame {
           isCentered = false;
 
           // Place the frame in the desired position (setBounds() does not work)
-          setLocation(newBounds.x, newBounds.y);
           setPreferredSize(new Dimension(newBounds.width, newBounds.height));
+          setSize(new Dimension(newBounds.width, newBounds.height));
+          setLocation(newBounds.x, newBounds.y);
 
           return;
 
@@ -502,6 +530,7 @@ public class MainView extends JFrame {
 
           // Place the frame in the desired position (setBounds() does not work)
           setPreferredSize(new Dimension(newBounds.width, newBounds.height));
+          setSize(new Dimension(newBounds.width, newBounds.height));
 
           return;
 

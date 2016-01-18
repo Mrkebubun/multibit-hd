@@ -36,14 +36,14 @@ public class RAGStatusTableCellRenderer extends DefaultTableCellRenderer {
     // Get the RAG (which is in the model as a RAGStatus
     if (value instanceof PaymentStatus) {
 
-      java.util.List<PaymentData> paymentDatas = paymentTableModel.getPaymentData();
+      java.util.List<PaymentData> paymentDataList = paymentTableModel.getPaymentDataList();
       int modelRow = table.convertRowIndexToModel(row);
-      PaymentData rowPaymentData = paymentDatas.get(modelRow);
+      PaymentData rowPaymentData = paymentDataList.get(modelRow);
       LabelDecorator.applyPaymentStatusIconAndColor(rowPaymentData.getStatus(), label, rowPaymentData.isCoinBase(), MultiBitUI.SMALL_ICON_SIZE);
     }
 
     if (isSelected) {
-      label.setBackground(table.getSelectionBackground());
+      label.setBackground(Themes.currentTheme.tableRowSelectedBackground());
     } else {
       if (row % 2 != 0) {
         label.setBackground(Themes.currentTheme.tableRowAltBackground());

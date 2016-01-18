@@ -5,7 +5,7 @@ import org.multibit.hd.core.services.CoreServices;
 import org.multibit.hd.hardware.core.HardwareWalletService;
 import org.multibit.hd.ui.views.wizards.AbstractHardwareWalletWizard;
 import org.multibit.hd.ui.views.wizards.AbstractWizardPanelView;
-import org.multibit.hd.ui.views.wizards.welcome.create_trezor_wallet.*;
+import org.multibit.hd.ui.views.wizards.welcome.create_hardware_wallet.*;
 import org.multibit.hd.ui.views.wizards.welcome.create_wallet.*;
 import org.multibit.hd.ui.views.wizards.welcome.restore_wallet.*;
 
@@ -43,6 +43,10 @@ public class WelcomeWizard extends AbstractHardwareWalletWizard<WelcomeWizardMod
       new WelcomeSelectLanguagePanelView(this, WELCOME_SELECT_LANGUAGE.name()));
 
     wizardViewMap.put(
+      WELCOME_ATTACH_HARDWARE_WALLET.name(),
+      new WelcomeAttachHardwareWalletPanelView(this, WELCOME_ATTACH_HARDWARE_WALLET.name()));
+
+    wizardViewMap.put(
       WELCOME_SELECT_WALLET.name(),
       new WelcomeSelectWalletPanelView(this, WELCOME_SELECT_WALLET.name()));
 
@@ -71,40 +75,40 @@ public class WelcomeWizard extends AbstractHardwareWalletWizard<WelcomeWizardMod
       new CreateWalletReportPanelView(this, CREATE_WALLET_REPORT.name()));
 
     wizardViewMap.put(
-      TREZOR_CREATE_WALLET_PREPARATION.name(),
-      new CreateTrezorWalletPreparationPanelView(this, TREZOR_CREATE_WALLET_PREPARATION.name()));
+      HARDWARE_CREATE_WALLET_PREPARATION.name(),
+      new CreateHardwareWalletPreparationPanelView(this, HARDWARE_CREATE_WALLET_PREPARATION.name()));
 
     wizardViewMap.put(
-      TREZOR_CREATE_WALLET_SELECT_BACKUP_LOCATION.name(),
-      new CreateTrezorWalletSelectBackupLocationPanelView(this, TREZOR_CREATE_WALLET_SELECT_BACKUP_LOCATION.name()));
+      HARDWARE_CREATE_WALLET_SELECT_BACKUP_LOCATION.name(),
+      new CreateHardwareWalletSelectBackupLocationPanelView(this, HARDWARE_CREATE_WALLET_SELECT_BACKUP_LOCATION.name()));
 
     wizardViewMap.put(
-      TREZOR_CREATE_WALLET_ENTER_DETAILS.name(),
-      new CreateTrezorWalletEnterDetailsPanelView(this, TREZOR_CREATE_WALLET_ENTER_DETAILS.name()));
+      HARDWARE_CREATE_WALLET_ENTER_DETAILS.name(),
+      new CreateHardwareWalletEnterDetailsPanelView(this, HARDWARE_CREATE_WALLET_ENTER_DETAILS.name()));
 
     wizardViewMap.put(
-      TREZOR_CREATE_WALLET_REQUEST_CREATE_WALLET.name(),
-      new CreateTrezorWalletRequestCreateWalletPanelView(this, TREZOR_CREATE_WALLET_REQUEST_CREATE_WALLET.name()));
+      HARDWARE_CREATE_WALLET_REQUEST_CREATE_WALLET.name(),
+      new CreateHardwareWalletRequestCreateWalletPanelView(this, HARDWARE_CREATE_WALLET_REQUEST_CREATE_WALLET.name()));
 
     wizardViewMap.put(
-      TREZOR_CREATE_WALLET_CONFIRM_CREATE_WALLET.name(),
-      new CreateTrezorWalletConfirmCreateWalletPanelView(this, TREZOR_CREATE_WALLET_CONFIRM_CREATE_WALLET.name()));
+      HARDWARE_CREATE_WALLET_CONFIRM_CREATE_WALLET.name(),
+      new CreateHardwareWalletConfirmCreateWalletPanelView(this, HARDWARE_CREATE_WALLET_CONFIRM_CREATE_WALLET.name()));
 
     wizardViewMap.put(
-      TREZOR_CREATE_WALLET_ENTER_NEW_PIN.name(),
-      new CreateTrezorWalletEnterNewPinPanelView(this, TREZOR_CREATE_WALLET_ENTER_NEW_PIN.name()));
+      HARDWARE_CREATE_WALLET_ENTER_NEW_PIN.name(),
+      new CreateHardwareWalletEnterNewPinPanelView(this, HARDWARE_CREATE_WALLET_ENTER_NEW_PIN.name()));
 
     wizardViewMap.put(
-      TREZOR_CREATE_WALLET_CONFIRM_NEW_PIN.name(),
-      new CreateTrezorWalletConfirmNewPinPanelView(this, TREZOR_CREATE_WALLET_CONFIRM_NEW_PIN.name()));
+      HARDWARE_CREATE_WALLET_CONFIRM_NEW_PIN.name(),
+      new CreateHardwareWalletConfirmNewPinPanelView(this, HARDWARE_CREATE_WALLET_CONFIRM_NEW_PIN.name()));
 
     wizardViewMap.put(
-      TREZOR_CREATE_WALLET_CONFIRM_WORD.name(),
-      new CreateTrezorWalletConfirmWordPanelView(this, TREZOR_CREATE_WALLET_CONFIRM_WORD.name()));
+      HARDWARE_CREATE_WALLET_CONFIRM_WORD.name(),
+      new CreateHardwareWalletConfirmWordPanelView(this, HARDWARE_CREATE_WALLET_CONFIRM_WORD.name()));
 
     wizardViewMap.put(
-      TREZOR_CREATE_WALLET_REPORT.name(),
-      new CreateTrezorWalletReportPanelView(this, TREZOR_CREATE_WALLET_REPORT.name()));
+      HARDWARE_CREATE_WALLET_REPORT.name(),
+      new CreateHardwareWalletReportPanelView(this, HARDWARE_CREATE_WALLET_REPORT.name()));
 
     wizardViewMap.put(
       RESTORE_PASSWORD_SEED_PHRASE.name(),
@@ -148,18 +152,16 @@ public class WelcomeWizard extends AbstractHardwareWalletWizard<WelcomeWizardMod
         // Ensure the panel updates its model (the button is outside of the panel itself)
         wizardPanelView.updateFromComponentModels(Optional.absent());
 
-
-
         switch (getWizardModel().getState()) {
 
-          case WELCOME_SELECT_LANGUAGE:
+          case WELCOME_ATTACH_HARDWARE_WALLET:
             // Check for initialised hardware wallet on cold start
-            Optional<HardwareWalletService> hardwareWalletService = CoreServices.getOrCreateHardwareWalletService();
+            Optional<HardwareWalletService> hardwareWalletService = CoreServices.getCurrentHardwareWalletService();
             if (hardwareWalletService.isPresent()
               && hardwareWalletService.get().isDeviceReady()
               && hardwareWalletService.get().isWalletPresent()) {
               // Initialised hardware wallet is attached so move directly to credentials
-              // We cannot move from WELCOME_SELECT_LANGUAGE due to complications
+              // We cannot move from WELCOME_ATTACH_HARDWARE_WALLET due to complications
               // with language changes in soft wallets, so a state progress is made first
               // followed by a hide
               getWizardModel().showNext();
@@ -182,8 +184,8 @@ public class WelcomeWizard extends AbstractHardwareWalletWizard<WelcomeWizardMod
             }
 
             break;
-          case TREZOR_CREATE_WALLET_ENTER_NEW_PIN:
-          case TREZOR_CREATE_WALLET_CONFIRM_NEW_PIN:
+          case HARDWARE_CREATE_WALLET_ENTER_NEW_PIN:
+          case HARDWARE_CREATE_WALLET_CONFIRM_NEW_PIN:
             // Treat as a PIN entry
             getWizardModel().providePin(getWizardModel().getMostRecentPin());
             break;

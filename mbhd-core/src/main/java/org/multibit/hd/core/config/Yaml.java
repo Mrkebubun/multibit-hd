@@ -2,8 +2,8 @@ package org.multibit.hd.core.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.fasterxml.jackson.dataformat.yaml.snakeyaml.error.YAMLException;
 import com.google.common.base.Optional;
-import org.multibit.hd.core.exceptions.ExceptionHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,7 +41,7 @@ public class Yaml {
    * @return The configuration data (<code>Configuration</code>, <code>Wallet Summary</code> etc) if present
    */
   public static synchronized <T> Optional<T> readYaml(InputStream is, Class<T> clazz) {
-    log.debug("Reading YAML data...");
+    log.trace("Reading YAML data...");
 
     Optional<T> value;
 
@@ -52,7 +52,8 @@ public class Yaml {
 
     try {
       value = Optional.fromNullable(mapper.readValue(is, clazz));
-    } catch (IOException e) {
+    } catch (YAMLException | IOException e) {
+      // Nothing the user can do in the event of a failure
       log.warn(e.getMessage());
       value = Optional.absent();
     }
@@ -78,8 +79,9 @@ public class Yaml {
 
     try {
       mapper.writeValue(os, configuration);
-    } catch (IOException e) {
-      ExceptionHandler.handleThrowable(e);
+    } catch (YAMLException | IOException e) {
+      // Nothing the user can do in the event of a failure
+      log.warn("Unable to write YAML: {}", e);
     }
   }
 }

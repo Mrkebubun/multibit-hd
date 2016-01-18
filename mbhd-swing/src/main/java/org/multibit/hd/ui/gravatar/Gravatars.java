@@ -10,9 +10,9 @@ import com.google.common.hash.Hashing;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import org.joda.time.DateTime;
-import org.multibit.hd.core.concurrent.SafeExecutors;
+import org.multibit.commons.concurrent.SafeExecutors;
+import org.multibit.commons.utils.Dates;
 import org.multibit.hd.core.dto.RAGStatus;
-import org.multibit.hd.core.utils.Dates;
 import org.multibit.hd.ui.MultiBitUI;
 import org.multibit.hd.ui.events.controller.ControllerEvents;
 import org.multibit.hd.ui.languages.Languages;
@@ -120,7 +120,6 @@ public class Gravatars {
     final URL url;
     try {
       url = new URL(GRAVATAR_URL + emailHash + ".jpg" + PARAMETERS);
-      log.debug("Gravatar lookup: '{}'", url.toString());
     } catch (MalformedURLException e) {
       // This should never happen
       log.error("Gravatar URL malformed", e);

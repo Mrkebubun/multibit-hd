@@ -4,7 +4,7 @@ import com.google.common.base.Optional;
 import org.bitcoinj.core.Address;
 import org.bitcoinj.core.Coin;
 import org.bitcoinj.core.Wallet;
-import org.multibit.hd.brit.dto.FeeState;
+import org.multibit.hd.brit.core.dto.FeeState;
 import org.spongycastle.crypto.params.KeyParameter;
 
 /**
@@ -19,7 +19,6 @@ public class SendRequestSummary {
 
   private final Address destinationAddress;
   private final Optional<FiatPayment> fiatPayment;
-  private final Address changeAddress;
   private final Coin feePerKB;
   private final Optional<FeeState> feeState;
 
@@ -31,6 +30,7 @@ public class SendRequestSummary {
   private Optional<String> notes = Optional.absent();
   private String password;
   private boolean applyClientFee = false;
+  private Address changeAddress;
 
   /**
    * The client fee added to the sendRequest.tx
@@ -135,6 +135,10 @@ public class SendRequestSummary {
     return changeAddress;
   }
 
+  public void setChangeAddress(Address changeAddress) {
+    this.changeAddress = changeAddress;
+  }
+
   /**
    * @return The fee to pay per Kb
    */
@@ -190,7 +194,7 @@ public class SendRequestSummary {
   }
 
   public void setSendRequest(Wallet.SendRequest sendRequest) {
-    this.sendRequest = Optional.of(sendRequest);
+    this.sendRequest = Optional.fromNullable(sendRequest);
   }
 
   public void setNotes(Optional<String> notes) {

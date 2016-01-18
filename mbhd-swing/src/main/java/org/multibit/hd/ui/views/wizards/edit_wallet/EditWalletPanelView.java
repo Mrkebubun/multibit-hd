@@ -47,7 +47,7 @@ public class EditWalletPanelView extends AbstractWizardPanelView<EditWalletWizar
    */
   public EditWalletPanelView(AbstractWizard<EditWalletWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.EDIT_WALLET_TITLE, AwesomeIcon.EDIT);
+    super(wizard, panelName, AwesomeIcon.EDIT, MessageKey.EDIT_WALLET_TITLE);
   }
 
   @Override
@@ -111,15 +111,8 @@ public class EditWalletPanelView extends AbstractWizardPanelView<EditWalletWizar
   @Override
   public void afterShow() {
 
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
-
-        name.requestFocusInWindow();
-        name.selectAll();
-
-      }
-    });
+    name.requestFocusInWindow();
+    name.selectAll();
   }
 
   @Override

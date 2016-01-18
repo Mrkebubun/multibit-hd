@@ -4,25 +4,24 @@ import com.google.common.base.Optional;
 import com.google.common.base.Strings;
 import com.google.common.util.concurrent.*;
 import net.miginfocom.swing.MigLayout;
-import org.multibit.hd.core.concurrent.SafeExecutors;
+import org.multibit.commons.concurrent.SafeExecutors;
+import org.multibit.hd.core.config.Configurations;
 import org.multibit.hd.core.dto.WalletId;
 import org.multibit.hd.core.dto.WalletPassword;
 import org.multibit.hd.core.dto.WalletSummary;
+import org.multibit.hd.core.error_reporting.ExceptionHandler;
 import org.multibit.hd.core.events.CoreEvents;
-import org.multibit.hd.core.exceptions.ExceptionHandler;
 import org.multibit.hd.core.exceptions.WalletLoadException;
 import org.multibit.hd.core.managers.InstallationManager;
 import org.multibit.hd.core.managers.WalletManager;
-import org.multibit.hd.core.services.CoreServices;
 import org.multibit.hd.ui.audio.Sounds;
 import org.multibit.hd.ui.events.view.ViewEvents;
-import org.multibit.hd.ui.languages.Languages;
 import org.multibit.hd.ui.languages.MessageKey;
 import org.multibit.hd.ui.views.components.*;
 import org.multibit.hd.ui.views.components.confirm_password.ConfirmPasswordModel;
 import org.multibit.hd.ui.views.components.confirm_password.ConfirmPasswordView;
-import org.multibit.hd.ui.views.components.display_security_alert.DisplaySecurityAlertModel;
-import org.multibit.hd.ui.views.components.display_security_alert.DisplaySecurityAlertView;
+import org.multibit.hd.ui.views.components.display_environment_alert.DisplayEnvironmentAlertModel;
+import org.multibit.hd.ui.views.components.display_environment_alert.DisplayEnvironmentAlertView;
 import org.multibit.hd.ui.views.components.enter_password.EnterPasswordModel;
 import org.multibit.hd.ui.views.components.enter_password.EnterPasswordView;
 import org.multibit.hd.ui.views.components.panels.PanelDecorator;
@@ -51,7 +50,7 @@ public class ChangePasswordPanelView extends AbstractWizardPanelView<ChangePassw
   private static final Logger log = LoggerFactory.getLogger(ChangePasswordPanelView.class);
 
   // Panel specific components
-  private ModelAndView<DisplaySecurityAlertModel, DisplaySecurityAlertView> displaySecurityPopoverMaV;
+  private ModelAndView<DisplayEnvironmentAlertModel, DisplayEnvironmentAlertView> displayEnvironmentPopoverMaV;
 
   private ModelAndView<EnterPasswordModel, EnterPasswordView> enterPasswordMaV;
   private ModelAndView<ConfirmPasswordModel, ConfirmPasswordView> confirmPasswordMaV;
@@ -62,14 +61,14 @@ public class ChangePasswordPanelView extends AbstractWizardPanelView<ChangePassw
    */
   public ChangePasswordPanelView(AbstractWizard<ChangePasswordWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.CHANGE_PASSWORD_TITLE, AwesomeIcon.LOCK);
+    super(wizard, panelName, AwesomeIcon.LOCK, MessageKey.CHANGE_PASSWORD_TITLE);
 
   }
 
   @Override
   public void newPanelModel() {
 
-    displaySecurityPopoverMaV = Popovers.newDisplaySecurityPopoverMaV(getPanelName());
+    displayEnvironmentPopoverMaV = Popovers.newDisplayEnvironmentPopoverMaV(getPanelName());
     enterPasswordMaV = Components.newEnterPasswordMaV(getPanelName());
     confirmPasswordMaV = Components.newConfirmPasswordMaV(getPanelName());
 
@@ -85,7 +84,7 @@ public class ChangePasswordPanelView extends AbstractWizardPanelView<ChangePassw
     getWizardModel().setChangePasswordPanelModel(panelModel);
 
     // Register components
-    registerComponents(enterPasswordMaV, confirmPasswordMaV, displaySecurityPopoverMaV);
+    registerComponents(enterPasswordMaV, confirmPasswordMaV, displayEnvironmentPopoverMaV);
 
   }
 
@@ -118,17 +117,10 @@ public class ChangePasswordPanelView extends AbstractWizardPanelView<ChangePassw
   @Override
   public void afterShow() {
 
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
+    enterPasswordMaV.getView().requestInitialFocus();
 
-        enterPasswordMaV.getView().requestInitialFocus();
-
-        // This requires a security popover check
-        checkForSecurityEventPopover(displaySecurityPopoverMaV);
-
-      }
-    });
+    // This requires a environment popover check
+    checkForEnvironmentEventPopover(displayEnvironmentPopoverMaV);
 
   }
 
@@ -142,6 +134,7 @@ public class ChangePasswordPanelView extends AbstractWizardPanelView<ChangePassw
       return true;
     }
 
+    // TODO This is already on the EDT so could be reconsidered
     // Start the spinner (we are deferring the hide)
     SwingUtilities.invokeLater(new Runnable() {
       @Override
@@ -180,7 +173,7 @@ public class ChangePasswordPanelView extends AbstractWizardPanelView<ChangePassw
             // Manually unsubscribe the MaVs
             CoreEvents.unsubscribe(enterPasswordMaV);
             CoreEvents.unsubscribe(confirmPasswordMaV);
-            CoreEvents.unsubscribe(displaySecurityPopoverMaV);
+            CoreEvents.unsubscribe(displayEnvironmentPopoverMaV);
 
 
             // Enable components
@@ -203,7 +196,7 @@ public class ChangePasswordPanelView extends AbstractWizardPanelView<ChangePassw
             Uninterruptibles.sleepUninterruptibly(2, TimeUnit.SECONDS);
 
             // Failed
-            Sounds.playBeep();
+            Sounds.playBeep(Configurations.currentConfiguration.getSound());
 
             // Ensure the view hides the spinner and enables components
             SwingUtilities.invokeLater(new Runnable() {
@@ -274,11 +267,6 @@ public class ChangePasswordPanelView extends AbstractWizardPanelView<ChangePassw
         WalletPassword walletPassword = new WalletPassword(password, walletId);
         WalletSummary walletSummary = currentWalletSummary.get();
         walletSummary.setWalletPassword(walletPassword);
-
-        CoreServices.getOrCreateHistoryService(walletPassword);
-
-        // Must have succeeded to be here
-        CoreServices.logHistory(Languages.safeText(MessageKey.PASSWORD_VERIFIED));
 
         return true;
       }

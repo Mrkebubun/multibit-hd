@@ -82,29 +82,6 @@ public class PanelDecorator {
   }
 
   /**
-   * <p>Add an exit, cancel combination</p>
-   *
-   * @param view   The view containing the panel to decorate
-   * @param wizard The wizard providing the actions
-   * @param <M>    The wizard model type
-   * @param <P>    The wizard panel model type
-   */
-  public static <M extends AbstractWizardModel, P> void addExitCancel(AbstractWizardPanelView<M, P> view, AbstractWizard<M> wizard) {
-
-    Preconditions.checkNotNull(view, "'view' must be present");
-    Preconditions.checkNotNull(view, "'wizard' must be present");
-    Preconditions.checkNotNull(view.getWizardScreenPanel(false), "'wizardScreenPanel' must be present");
-
-    // Use the wizard panel
-    JPanel wizardScreenPanel = view.getWizardScreenPanel(false);
-
-    // Cancel always leads
-    addCancel(view, wizard, wizardScreenPanel);
-    addExit(view, wizard, wizardScreenPanel);
-
-  }
-
-  /**
    * <p>Add a finish only button</p>
    *
    * @param view   The view containing the panel to decorate
@@ -129,6 +106,34 @@ public class PanelDecorator {
     addFinish(view, wizard, wizardScreenPanel);
 
     view.getFinishButton().requestFocusInWindow();
+
+  }
+
+  /**
+   * <p>Add a next only button</p>
+   *
+   * @param view   The view containing the panel to decorate
+   * @param wizard The wizard providing the actions
+   * @param <M>    The wizard model type
+   * @param <P>    The wizard panel model type
+   */
+  public static <M extends AbstractWizardModel, P> void addNext(AbstractWizardPanelView<M, P> view, AbstractWizard<M> wizard) {
+
+    Preconditions.checkNotNull(view, "'view' must be present");
+    Preconditions.checkNotNull(view, "'wizard' must be present");
+
+    // Use the wizard panel
+    JPanel wizardScreenPanel = view.getWizardScreenPanel(false);
+
+    // Add an invisible button to push the next
+    JButton empty = Buttons.newExitButton(null, false);
+    empty.setVisible(false);
+
+    wizardScreenPanel.add(empty, "cell 0 2,push");
+
+    addNext(view, wizard, wizardScreenPanel);
+
+    view.getNextButton().requestFocusInWindow();
 
   }
 
@@ -292,14 +297,14 @@ public class PanelDecorator {
    }
 
   /**
-   * <p>Add an exit/cancel, restore, finish button combination</p>
+   * <p>Add an exit/cancel, next button combination. Clicking "next" will trigger the "finish" action.</p>
    *
    * @param view   The view containing the panel to decorate
    * @param wizard The wizard providing the actions
    * @param <M>    The wizard model type
    * @param <P>    The wizard panel model type
    */
-  public static <M extends AbstractWizardModel, P> void addExitCancelRestoreUnlockAsNext(AbstractWizardPanelView<M, P> view, AbstractWizard<M> wizard) {
+  public static <M extends AbstractWizardModel, P> void addExitCancelNextAsFinish(AbstractWizardPanelView<M, P> view, AbstractWizard<M> wizard) {
 
     Preconditions.checkNotNull(view, "'view' must be present");
     Preconditions.checkNotNull(view, "'wizard' must be present");
@@ -310,12 +315,36 @@ public class PanelDecorator {
 
     // Cancel always leads
     addExitCancel(view, wizard, wizardScreenPanel);
+    addNextAsFinish(view, wizard, wizardScreenPanel);
+
+  }
+
+  /**
+   * <p>Add an exit/cancel, restore, unlock button combination. Clicking "unlock" will trigger the "next" action.</p>
+   *
+   * @param view   The view containing the panel to decorate
+   * @param wizard The wizard providing the actions
+   * @param <M>    The wizard model type
+   * @param <P>    The wizard panel model type
+   */
+  public static <M extends AbstractWizardModel, P> void addExitCancelCreateRestoreUnlockAsNext(AbstractWizardPanelView<M, P> view, AbstractWizard<M> wizard) {
+
+    Preconditions.checkNotNull(view, "'view' must be present");
+    Preconditions.checkNotNull(view, "'wizard' must be present");
+    Preconditions.checkNotNull(view.getWizardScreenPanel(false), "'wizardScreenPanel' must be present");
+
+    // Use the current panel
+    JPanel wizardScreenPanel = view.getWizardScreenPanel(false);
+
+    // Cancel always leads
+    addExitCancel(view, wizard, wizardScreenPanel);
+    addCreate(view, wizard, wizardScreenPanel);
     addRestore(view, wizard, wizardScreenPanel);
     addUnlockAsNext(view, wizard, wizardScreenPanel);
 
   }
   /**
-   * <p>Add an exit/cancel, restore, previous, finish button combination</p>
+   * <p>Add an exit/cancel, Restore, Previous and Finish button combination</p>
    *
    * @param view   The view containing the panel to decorate
    * @param wizard The wizard providing the actions
@@ -340,7 +369,7 @@ public class PanelDecorator {
   }
 
   /**
-    * <p>Add a restore and finish button combination</p>
+    * <p>Add an Exit and Finish button combination</p>
     *
     * @param view   The view containing the panel to decorate
     * @param wizard The wizard providing the actions
@@ -386,30 +415,6 @@ public class PanelDecorator {
     // Replace next with send
     view.setNextButton(Buttons.newSendButton(wizard.getNextAction(view)));
     wizardScreenPanel.add(view.getNextButton(), "cell 3 2");
-
-  }
-
-  /**
-   * <p>Add a cancel, previous, next button combination</p>
-   *
-   * @param view   The view containing the panel to decorate
-   * @param wizard The wizard providing the actions
-   * @param <M>    The wizard model type
-   * @param <P>    The wizard panel model type
-   */
-  public static <M extends AbstractWizardModel, P> void addCancelPreviousNext(AbstractWizardPanelView<M, P> view, AbstractWizard<M> wizard) {
-
-    Preconditions.checkNotNull(view, "'view' must be present");
-    Preconditions.checkNotNull(view, "'wizard' must be present");
-    Preconditions.checkNotNull(view.getWizardScreenPanel(false), "'wizardScreenPanel' must be present");
-
-    // Use the wizard panel
-    JPanel wizardScreenPanel = view.getWizardScreenPanel(false);
-
-    // Cancel always leads
-    addCancel(view, wizard, wizardScreenPanel);
-    addPrevious(view, wizard, wizardScreenPanel);
-    addNext(view, wizard, wizardScreenPanel);
 
   }
 
@@ -624,6 +629,24 @@ public class PanelDecorator {
     wizardScreenPanel.add(view.getRestoreButton(), "cell 2 2");
 
   }
+  /**
+    * <p>Add a "create" button into the standard cell (left of restore)</p>
+    *
+    * @param view              The view containing the panel to decorate
+    * @param wizard            The wizard providing the actions
+    * @param wizardScreenPanel The wizard panel providing the layout
+    * @param <M>               The wizard model type
+    * @param <P>               The wizard panel model type
+    */
+   private static <M extends AbstractWizardModel, P> void addCreate(AbstractWizardPanelView<M, P> view, AbstractWizard<M> wizard, JPanel wizardScreenPanel) {
+
+     Preconditions.checkNotNull(view, "'view' must be present");
+     Preconditions.checkNotNull(view, "'wizard' must be present");
+
+     view.setCreateButton(Buttons.newCreateButton(wizard.getCreateAction(view)));
+     wizardScreenPanel.add(view.getCreateButton(), "cell 1 2");
+
+   }
 
   /**
    * <p>Add an "exit/cancel" button into the standard cell</p>
@@ -731,7 +754,7 @@ public class PanelDecorator {
   }
 
   /**
-   * <p>Add an "unlock" button as a NExt button into an appropriate cell</p>
+   * <p>Add an "unlock" button that uses the Next button action into an appropriate cell</p>
    *
    * @param view              The view containing the panel to decorate
    * @param wizard            The wizard providing the actions
@@ -747,6 +770,25 @@ public class PanelDecorator {
     view.setNextButton(Buttons.newUnlockButton(wizard.getNextAction(view)));
     wizardScreenPanel.add(view.getNextButton(), "cell 3 2");
   }
+
+  /**
+   * <p>Add a "next" button that uses the Finish button action into an appropriate cell</p>
+   *
+   * @param view              The view containing the panel to decorate
+   * @param wizard            The wizard providing the actions
+   * @param wizardScreenPanel The wizard panel providing the layout
+   * @param <M>               The wizard model type
+   * @param <P>               The wizard panel model type
+   */
+  private static <M extends AbstractWizardModel, P> void addNextAsFinish(AbstractWizardPanelView<M, P> view, AbstractWizard<M> wizard, JPanel wizardScreenPanel) {
+
+    Preconditions.checkNotNull(view, "'view' must be present");
+    Preconditions.checkNotNull(view, "'wizard' must be present");
+
+    view.setNextButton(Buttons.newNextButton(wizard.getFinishAction(view)));
+    wizardScreenPanel.add(view.getNextButton(), "cell 3 2");
+  }
+
   /**
    * <p>Add an "apply" button into an appropriate cell</p>
    *

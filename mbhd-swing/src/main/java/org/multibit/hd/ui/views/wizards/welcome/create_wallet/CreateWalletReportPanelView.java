@@ -7,19 +7,19 @@ import com.google.common.util.concurrent.Uninterruptibles;
 import net.miginfocom.swing.MigLayout;
 import org.bitcoinj.crypto.MnemonicCode;
 import org.bitcoinj.crypto.MnemonicException;
-import org.multibit.hd.brit.seed_phrase.SeedPhraseGenerator;
-import org.multibit.hd.brit.services.FeeService;
-import org.multibit.hd.core.concurrent.SafeExecutors;
+import org.multibit.commons.concurrent.SafeExecutors;
+import org.multibit.commons.utils.Dates;
+import org.multibit.hd.brit.core.seed_phrase.SeedPhraseGenerator;
+import org.multibit.hd.brit.core.services.FeeService;
 import org.multibit.hd.core.config.Configurations;
 import org.multibit.hd.core.dto.WalletSummary;
-import org.multibit.hd.core.exceptions.ExceptionHandler;
+import org.multibit.hd.core.error_reporting.ExceptionHandler;
 import org.multibit.hd.core.managers.BackupManager;
+import org.multibit.hd.core.managers.HttpsManager;
 import org.multibit.hd.core.managers.InstallationManager;
-import org.multibit.hd.core.managers.SSLManager;
 import org.multibit.hd.core.managers.WalletManager;
 import org.multibit.hd.core.services.BackupService;
 import org.multibit.hd.core.services.CoreServices;
-import org.multibit.hd.core.utils.Dates;
 import org.multibit.hd.ui.MultiBitUI;
 import org.multibit.hd.ui.events.view.ViewEvents;
 import org.multibit.hd.ui.languages.Languages;
@@ -64,6 +64,7 @@ public class CreateWalletReportPanelView extends AbstractWizardPanelView<Welcome
   private JLabel backupLocationStatusLabel;
   private JLabel walletCreatedStatusLabel;
   private JLabel cacertsInstalledStatusLabel;
+  private JLabel createWalletNoteLabel;
 
   private ListeningExecutorService createWalletExecutorService;
 
@@ -73,7 +74,7 @@ public class CreateWalletReportPanelView extends AbstractWizardPanelView<Welcome
    */
   public CreateWalletReportPanelView(AbstractWizard<WelcomeWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.CREATE_WALLET_REPORT_TITLE, AwesomeIcon.FILE_TEXT);
+    super(wizard, panelName, AwesomeIcon.FILE_TEXT, MessageKey.CREATE_WALLET_REPORT_TITLE);
 
   }
 
@@ -109,18 +110,23 @@ public class CreateWalletReportPanelView extends AbstractWizardPanelView<Welcome
     cacertsInstalledStatusLabel = Labels.newCACertsInstalledStatus(false);
     walletCreatedStatusLabel = Labels.newWalletCreatedStatus(false);
 
+    // Provide a helpful note
+    createWalletNoteLabel = Labels.newCreateWalletReportNote();
+
     // Make all labels invisible initially
     seedPhraseCreatedStatusLabel.setVisible(false);
     walletPasswordCreatedStatusLabel.setVisible(false);
     backupLocationStatusLabel.setVisible(false);
     cacertsInstalledStatusLabel.setVisible(false);
     walletCreatedStatusLabel.setVisible(false);
+    createWalletNoteLabel.setVisible(false);
 
     contentPanel.add(seedPhraseCreatedStatusLabel, "wrap");
     contentPanel.add(walletPasswordCreatedStatusLabel, "wrap");
     contentPanel.add(backupLocationStatusLabel, "wrap");
     contentPanel.add(cacertsInstalledStatusLabel, "wrap");
     contentPanel.add(walletCreatedStatusLabel, "wrap");
+    contentPanel.add(createWalletNoteLabel, "wrap");
 
   }
 
@@ -287,10 +293,12 @@ public class CreateWalletReportPanelView extends AbstractWizardPanelView<Welcome
 
       // Attempt to install the CA certifications for the exchanges and MultiBit.org
       // Configure SSL certificates without forcing
-      SSLManager.INSTANCE.installCACertificates(
+      HttpsManager.INSTANCE.installCACertificates(
         InstallationManager.getOrCreateApplicationDataDirectory(),
         InstallationManager.CA_CERTS_NAME,
-        null, false);
+        null, // Use default host list
+        false // Do not force loading if they are already present
+      );
 
       // Update the UI after the BRIT exchange completes
       SwingUtilities.invokeLater(new Runnable() {
@@ -344,6 +352,7 @@ public class CreateWalletReportPanelView extends AbstractWizardPanelView<Welcome
         new Runnable() {
           @Override
           public void run() {
+            createWalletNoteLabel.setVisible(true);
             // Enable the finish button on the report page
             ViewEvents.fireWizardButtonEnabledEvent(WelcomeWizardState.CREATE_WALLET_REPORT.name(), WizardButton.FINISH, true);
           }

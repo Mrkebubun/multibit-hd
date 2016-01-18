@@ -3,7 +3,7 @@ package org.multibit.hd.core.services;
 import com.google.common.base.Optional;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.ListeningScheduledExecutorService;
-import org.multibit.hd.core.concurrent.SafeExecutors;
+import org.multibit.commons.concurrent.SafeExecutors;
 import org.multibit.hd.core.events.CoreEvents;
 import org.multibit.hd.core.events.ShutdownEvent;
 import org.slf4j.Logger;
@@ -145,15 +145,6 @@ public abstract class AbstractService implements ManagedService {
   }
 
   /**
-   * <p>Provide a single thread executor</p>
-   *
-   * @param poolName The thread pool name (use lowercase hyphenated)
-   */
-  protected void requireSingleThreadExecutor(String poolName) {
-    service = Optional.of(SafeExecutors.newSingleThreadExecutor(poolName));
-  }
-
-  /**
    * <p>Provide a fixed thread pool executor</p>
    *
    * @param threadCount The number of threads
@@ -168,13 +159,6 @@ public abstract class AbstractService implements ManagedService {
    */
   protected ListeningExecutorService getExecutorService() {
     return service.get();
-  }
-
-  /**
-   * @return The executor service optional
-   */
-  protected Optional<ListeningExecutorService> getExecutorServiceOptional() {
-    return service;
   }
 
   /**

@@ -53,7 +53,7 @@ public class UnitsSettingsPanelView extends AbstractWizardPanelView<UnitsWizardM
    */
   public UnitsSettingsPanelView(AbstractWizard<UnitsWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.SHOW_UNITS_WIZARD, AwesomeIcon.BITCOIN);
+    super(wizard, panelName, AwesomeIcon.BITCOIN, MessageKey.SHOW_UNITS_WIZARD);
 
   }
 
@@ -154,16 +154,8 @@ public class UnitsSettingsPanelView extends AbstractWizardPanelView<UnitsWizardM
   @Override
   public void afterShow() {
 
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
-
-        localSymbolComboBox.requestFocusInWindow();
-
-        displayAmountMaV.getView().updateView(getPanelModel().get().getConfiguration());
-
-      }
-    });
+    localSymbolComboBox.requestFocusInWindow();
+    displayAmountMaV.getView().updateView(getPanelModel().get().getConfiguration());
 
   }
 
@@ -227,7 +219,7 @@ public class UnitsSettingsPanelView extends AbstractWizardPanelView<UnitsWizardM
 
     // Validate the combination
     if (grouping.equals(getWizardModel().getConfiguration().getBitcoin().getDecimalSeparator())) {
-      Sounds.playBeep();
+      Sounds.playBeep(Configurations.currentConfiguration.getSound());
       decimalErrorStatus.setVisible(false);
       groupingErrorStatus.setVisible(true);
       ViewEvents.fireWizardButtonEnabledEvent(
@@ -264,7 +256,7 @@ public class UnitsSettingsPanelView extends AbstractWizardPanelView<UnitsWizardM
 
     // Validate the combination
     if (decimal.equals(getWizardModel().getConfiguration().getBitcoin().getGroupingSeparator())) {
-      Sounds.playBeep();
+      Sounds.playBeep(Configurations.currentConfiguration.getSound());
       groupingErrorStatus.setVisible(false);
       decimalErrorStatus.setVisible(true);
       ViewEvents.fireWizardButtonEnabledEvent(

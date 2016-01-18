@@ -5,20 +5,23 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.eventbus.Subscribe;
 import org.multibit.hd.core.events.CoreEvents;
-import org.multibit.hd.core.events.SecurityEvent;
+import org.multibit.hd.core.events.EnvironmentEvent;
 import org.multibit.hd.core.services.CoreServices;
 import org.multibit.hd.ui.MultiBitUI;
 import org.multibit.hd.ui.events.view.ComponentChangedEvent;
 import org.multibit.hd.ui.events.view.ViewEvents;
 import org.multibit.hd.ui.events.view.WizardButtonEnabledEvent;
+import org.multibit.hd.ui.languages.Languages;
 import org.multibit.hd.ui.languages.MessageKey;
 import org.multibit.hd.ui.views.components.Labels;
 import org.multibit.hd.ui.views.components.ModelAndView;
 import org.multibit.hd.ui.views.components.Panels;
-import org.multibit.hd.ui.views.components.display_security_alert.DisplaySecurityAlertModel;
-import org.multibit.hd.ui.views.components.display_security_alert.DisplaySecurityAlertView;
+import org.multibit.hd.ui.views.components.display_environment_alert.DisplayEnvironmentAlertModel;
+import org.multibit.hd.ui.views.components.display_environment_alert.DisplayEnvironmentAlertView;
 import org.multibit.hd.ui.views.components.panels.PanelDecorator;
 import org.multibit.hd.ui.views.fonts.AwesomeIcon;
+import org.multibit.hd.ui.views.themes.NimbusDecorator;
+import org.multibit.hd.ui.views.themes.Themes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -89,6 +92,7 @@ public abstract class AbstractWizardPanelView<M extends AbstractWizardModel, P> 
   private Optional<JButton> cancelButton = Optional.absent();
   private Optional<JButton> nextButton = Optional.absent();
   private Optional<JButton> previousButton = Optional.absent();
+  private Optional<JButton> createButton = Optional.absent();
   private Optional<JButton> restoreButton = Optional.absent();
   private Optional<JButton> finishButton = Optional.absent();
   private Optional<JButton> applyButton = Optional.absent();
@@ -96,10 +100,16 @@ public abstract class AbstractWizardPanelView<M extends AbstractWizardModel, P> 
   /**
    * @param wizard         The wizard
    * @param panelName      The panel name to filter events from components
-   * @param titleKey       The key for the title section text
    * @param backgroundIcon The icon for the content section background
+   * @param titleKey       The key for the title section text
+   * @param values         The values for the title key
    */
-  public AbstractWizardPanelView(AbstractWizard<M> wizard, String panelName, MessageKey titleKey, AwesomeIcon backgroundIcon) {
+  public AbstractWizardPanelView(
+    AbstractWizard<M> wizard,
+    String panelName,
+    AwesomeIcon backgroundIcon,
+    MessageKey titleKey,
+    Object... values) {
 
     Preconditions.checkNotNull(wizard, "'wizard' must be present");
     Preconditions.checkNotNull(titleKey, "'title' must be present");
@@ -122,7 +132,7 @@ public abstract class AbstractWizardPanelView<M extends AbstractWizardModel, P> 
     PanelDecorator.applyWizardTheme(wizardScreenPanel);
 
     // Add the title to the wizard
-    JLabel title = Labels.newTitleLabel(titleKey);
+    JLabel title = Labels.newTitleLabel(titleKey, values);
     wizardScreenPanel.add(title, "span 4," + MultiBitUI.WIZARD_MAX_WIDTH_MIG + ",gap 0, shrink 200,aligny top,align center,h 90lp!,wrap");
 
     // Provide a basic empty content panel (allows lazy initialisation later)
@@ -323,7 +333,7 @@ public abstract class AbstractWizardPanelView<M extends AbstractWizardModel, P> 
   }
 
   /**
-   * @return The "recover" button for this view
+   * @return The "restore" button for this view
    */
   public JButton getRestoreButton() {
     return restoreButton.get();
@@ -331,6 +341,17 @@ public abstract class AbstractWizardPanelView<M extends AbstractWizardModel, P> 
 
   public void setRestoreButton(JButton recoverButton) {
     this.restoreButton = Optional.fromNullable(recoverButton);
+  }
+
+  /**
+   * @return The "create" button for this view
+   */
+  public JButton getCreateButton() {
+    return createButton.get();
+  }
+
+  public void setCreateButton(JButton createButton) {
+    this.createButton = Optional.fromNullable(createButton);
   }
 
   /**
@@ -360,6 +381,8 @@ public abstract class AbstractWizardPanelView<M extends AbstractWizardModel, P> 
    *
    * <p>Typically this is where a panel view would reference the wizard model to obtain earlier values for display</p>
    *
+   * <p>This method is guaranteed to run on the EDT</p>
+   *
    * @return True if the panel can be shown, false if the show operation should be aborted
    */
   public boolean beforeShow() {
@@ -378,18 +401,13 @@ public abstract class AbstractWizardPanelView<M extends AbstractWizardModel, P> 
    * <li>register a default button to speed up keyboard data entry</li>
    * </ul>
    *
-   * the Swing thread as follows:</p>
+   * <p>To set focus to a primary component use this construct:</p>
    *
    * <pre>
-   * SwingUtilities.invokeLater(new Runnable() {
-   *
-   * {@literal @}Override public void run() {
-   *   getCancelButton().requestFocusInWindow();
-   * }
-   *
-   * });
-   *
+   * getCancelButton().requestFocusInWindow();
    * </pre>
+   *
+   * <p>This method is guaranteed to run on the EDT</p>
    */
   public void afterShow() {
 
@@ -398,41 +416,52 @@ public abstract class AbstractWizardPanelView<M extends AbstractWizardModel, P> 
   }
 
   /**
-   * <p>Standard handling for security popovers</p>
+   * <p>Standard handling for environment popovers</p>
    *
-   * @param displaySecurityPopoverMaV The display security popover MaV
+   * @param displayEnvironmentPopoverMaV The display environment popover MaV
    */
-  protected void checkForSecurityEventPopover(ModelAndView<DisplaySecurityAlertModel, DisplaySecurityAlertView> displaySecurityPopoverMaV) {
+  protected void checkForEnvironmentEventPopover(ModelAndView<DisplayEnvironmentAlertModel, DisplayEnvironmentAlertView> displayEnvironmentPopoverMaV) {
 
-    // Check for any security alerts
-    Optional<SecurityEvent> securityEvent = CoreServices.getApplicationEventService().getLatestSecurityEvent();
+    // Check for any environment alerts
+    Optional<EnvironmentEvent> environmentEvent = CoreServices.getApplicationEventService().getLatestEnvironmentEvent();
 
-    if (securityEvent.isPresent()) {
+    if (environmentEvent.isPresent()) {
 
-      displaySecurityPopoverMaV.getModel().setValue(securityEvent.get());
+      log.debug("Showing environment event popover");
 
-      // Show the security alert as a popover
-      JPanel popoverPanel = displaySecurityPopoverMaV.getView().newComponentPanel();
+      // Provide the event as the model
+      displayEnvironmentPopoverMaV.getModel().setValue(environmentEvent.get());
+
+      // Show the environment alert as a popover
+      JPanel popoverPanel = displayEnvironmentPopoverMaV.getView().newComponentPanel();
 
       // Potentially decorate the panel (or do nothing)
-      switch (securityEvent.get().getSummary().getAlertType()) {
+      switch (environmentEvent.get().getSummary().getAlertType()) {
         case DEBUGGER_ATTACHED:
           popoverPanel.add(Panels.newDebuggerWarning(), "align center,wrap");
           break;
         case UNSUPPORTED_FIRMWARE_ATTACHED:
           popoverPanel.add(Panels.newUnsupportedFirmware(), "align center,wrap");
           break;
+        case DEPRECATED_FIRMWARE_ATTACHED:
+          popoverPanel.add(Panels.newDeprecatedFirmware(), "align center,wrap");
+          break;
+        case UNSUPPORTED_CONFIGURATION_ATTACHED:
+          popoverPanel.add(Panels.newUnsupportedConfigurationPassphrase(), "align center,wrap");
+          break;
         default:
           // Do nothing
           return;
       }
 
-      // Show the popover
-      Panels.showLightBoxPopover(popoverPanel);
+      // Check for an existing lightbox popover
+      if (!Panels.isLightBoxPopoverShowing()) {
+        // Show the popover
+        Panels.showLightBoxPopover(popoverPanel);
+      }
 
-      // Discard the security event now that the user is aware (this prevents multiple showings)
-      CoreServices.getApplicationEventService().onSecurityEvent(null);
-
+      // Discard the environment event now that the user is aware (this prevents multiple showings)
+      CoreServices.getApplicationEventService().onEnvironmentEvent(null);
 
     }
   }
@@ -441,6 +470,8 @@ public abstract class AbstractWizardPanelView<M extends AbstractWizardModel, P> 
    * <p>Called before this wizard is about to be hidden.</p>
    *
    * <p>Typically this is where a panel view would {@link #updateFromComponentModels}, but implementations will vary</p>
+   *
+   * <p>This method is guaranteed to run on the EDT</p>
    *
    * @param isExitCancel True if this hide action comes from a exit or cancel operation
    *
@@ -461,6 +492,8 @@ public abstract class AbstractWizardPanelView<M extends AbstractWizardModel, P> 
    * <li>Update their panel model to reflect the component models (unless there is a direct reference)</li>
    * <li>Update the wizard model if the panel model data is valid</li>
    * </ol>
+   *
+   * <p>This method is guaranteed to run on the EDT</p>
    *
    * @param componentModel The component model (
    */
@@ -491,6 +524,12 @@ public abstract class AbstractWizardPanelView<M extends AbstractWizardModel, P> 
     // Target the binding for released
     Panels.getApplicationFrame().getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
       .put(KeyStroke.getKeyStroke("released ENTER"), "press");
+
+    if (button.getText().equalsIgnoreCase(Languages.safeText(MessageKey.EXIT))) {
+      NimbusDecorator.applyThemeColor(Themes.currentTheme.dangerAlertBackground(), button);
+    } else {
+      NimbusDecorator.applyThemeColor(Themes.currentTheme.buttonDefaultBackground(), button);
+    }
 
   }
 
@@ -571,6 +610,11 @@ public abstract class AbstractWizardPanelView<M extends AbstractWizardModel, P> 
             case RESTORE:
               if (restoreButton.isPresent()) {
                 restoreButton.get().setEnabled(event.isEnabled());
+              }
+              break;
+            case CREATE:
+              if (createButton.isPresent()) {
+                createButton.get().setEnabled(event.isEnabled());
               }
               break;
             default:

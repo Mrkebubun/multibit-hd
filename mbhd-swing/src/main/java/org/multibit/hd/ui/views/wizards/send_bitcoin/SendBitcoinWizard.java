@@ -26,7 +26,6 @@ public class SendBitcoinWizard extends AbstractHardwareWalletWizard<SendBitcoinW
 
   @Override
   protected void populateWizardViewMap(Map<String, AbstractWizardPanelView> wizardViewMap) {
-
     wizardViewMap.put(
       SendBitcoinState.SEND_DISPLAY_PAYMENT_REQUEST.name(),
       new SendBitcoinDisplayPaymentRequestPanelView(this, SendBitcoinState.SEND_DISPLAY_PAYMENT_REQUEST.name()));
@@ -37,11 +36,19 @@ public class SendBitcoinWizard extends AbstractHardwareWalletWizard<SendBitcoinW
       SendBitcoinState.SEND_CONFIRM_AMOUNT.name(),
       new SendBitcoinConfirmPanelView(this, SendBitcoinState.SEND_CONFIRM_AMOUNT.name()));
     wizardViewMap.put(
-      SendBitcoinState.SEND_CONFIRM_TREZOR.name(),
-      new SendBitcoinConfirmTrezorPanelView(this, SendBitcoinState.SEND_CONFIRM_TREZOR.name()));
+      SendBitcoinState.SEND_CONFIRM_HARDWARE.name(),
+      new SendBitcoinConfirmHardwarePanelView(this, SendBitcoinState.SEND_CONFIRM_HARDWARE.name()));
+    wizardViewMap.put(
+      SendBitcoinState.SEND_ENTER_PIN_FROM_CONFIRM_HARDWARE.name(),
+      new SendBitcoinEnterPinPanelView(this, SendBitcoinState.SEND_ENTER_PIN_FROM_CONFIRM_HARDWARE.name()));
     wizardViewMap.put(
       SendBitcoinState.SEND_REPORT.name(),
       new SendBitcoinReportPanelView(this, SendBitcoinState.SEND_REPORT.name()));
+    wizardViewMap.put(
+      SendBitcoinState.SEND_BIP70_PAYMENT_MEMO.name(),
+      new SendBitcoinEnterPaymentMemoPanelView(this, SendBitcoinState.SEND_BIP70_PAYMENT_MEMO.name()));
+    wizardViewMap.put(
+      SendBitcoinState.SEND_BIP70_PAYMENT_ACK_MEMO.name(),
+      new SendBitcoinShowPaymentACKMemoPanelView(this, SendBitcoinState.SEND_BIP70_PAYMENT_ACK_MEMO.name()));
   }
-
 }

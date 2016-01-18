@@ -39,7 +39,7 @@ public class CreateWalletCreatePasswordPanelView extends AbstractWizardPanelView
    */
   public CreateWalletCreatePasswordPanelView(AbstractWizard<WelcomeWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.CREATE_WALLET_PASSWORD_TITLE, AwesomeIcon.KEY);
+    super(wizard, panelName, AwesomeIcon.KEY, MessageKey.CREATE_WALLET_PASSWORD_TITLE);
 
   }
 
@@ -80,12 +80,7 @@ public class CreateWalletCreatePasswordPanelView extends AbstractWizardPanelView
   @Override
   public void afterShow() {
 
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        confirmPasswordMaV.getView().requestInitialFocus();
-      }
-    });
+    confirmPasswordMaV.getView().requestInitialFocus();
 
   }
 

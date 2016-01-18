@@ -1,27 +1,31 @@
 package org.multibit.hd.core.services;
 
+import com.fasterxml.jackson.dataformat.yaml.snakeyaml.error.YAMLException;
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.bitcoinj.core.Context;
+import org.bitcoinj.core.NetworkParameters;
 import org.bitcoinj.utils.Threading;
-import org.bouncycastle.openpgp.PGPPublicKey;
-import org.multibit.hd.brit.crypto.PGPUtils;
-import org.multibit.hd.brit.seed_phrase.Bip39SeedPhraseGenerator;
-import org.multibit.hd.brit.seed_phrase.SeedPhraseGenerator;
-import org.multibit.hd.brit.services.FeeService;
-import org.multibit.hd.core.concurrent.SafeExecutors;
+import org.multibit.commons.concurrent.SafeExecutors;
+import org.multibit.hd.brit.core.seed_phrase.Bip39SeedPhraseGenerator;
+import org.multibit.hd.brit.core.seed_phrase.SeedPhraseGenerator;
+import org.multibit.hd.brit.core.services.BRITServices;
+import org.multibit.hd.brit.core.services.FeeService;
 import org.multibit.hd.core.config.BitcoinConfiguration;
 import org.multibit.hd.core.config.Configuration;
 import org.multibit.hd.core.config.Configurations;
 import org.multibit.hd.core.config.Yaml;
-import org.multibit.hd.core.dto.HistoryEntry;
 import org.multibit.hd.core.dto.WalletId;
+import org.multibit.hd.core.dto.WalletMode;
 import org.multibit.hd.core.dto.WalletPassword;
 import org.multibit.hd.core.dto.WalletSummary;
-import org.multibit.hd.core.events.CoreEvents;
+import org.multibit.hd.core.error_reporting.ExceptionHandler;
 import org.multibit.hd.core.events.ShutdownEvent;
 import org.multibit.hd.core.exceptions.CoreException;
+import org.multibit.hd.core.exceptions.PaymentsLoadException;
 import org.multibit.hd.core.logging.LoggingFactory;
 import org.multibit.hd.core.managers.InstallationManager;
 import org.multibit.hd.core.managers.WalletManager;
@@ -29,16 +33,19 @@ import org.multibit.hd.core.utils.BitcoinNetwork;
 import org.multibit.hd.hardware.core.HardwareWalletClient;
 import org.multibit.hd.hardware.core.HardwareWalletService;
 import org.multibit.hd.hardware.core.wallets.HardwareWallets;
+import org.multibit.hd.hardware.keepkey.clients.KeepKeyHardwareWalletClient;
+import org.multibit.hd.hardware.keepkey.wallets.v1.KeepKeyV1HidHardwareWallet;
 import org.multibit.hd.hardware.trezor.clients.TrezorHardwareWalletClient;
 import org.multibit.hd.hardware.trezor.wallets.v1.TrezorV1HidHardwareWallet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.spongycastle.openpgp.PGPException;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URL;
+import java.util.List;
 
 /**
  * <p>Factory to provide the following to application API:</p>
@@ -52,28 +59,20 @@ public class CoreServices {
 
   private static final Logger log = LoggerFactory.getLogger(CoreServices.class);
 
-  /**
-   * The URL of the live matcher daemon
-   */
-  public static final String LIVE_MATCHER_URL = "http://localhost:9090/brit";
-
-  // TODO these should point to the multibit.org with the real matcher key
-  /**
-   * The live matcher PGP public key file
-   */
-  public static final String LIVE_MATCHER_PUBLIC_KEY_FILE = "multibit-org-matcher-key.asc";
+  private static final int TREZOR_WALLET_SERVICE_INDEX = 0;
+  private static final int KEEP_KEY_WALLET_SERVICE_INDEX = 1;
 
   /**
-   * Keep track of selected application events (e.g. exchange rate changes, security alerts etc)
+   * Keep track of selected application events (e.g. exchange rate changes, environment alerts etc)
    * Not an optional service
    */
   private static ApplicationEventService applicationEventService;
 
   /**
-   * Keep track of security events (e.g. debugger, file permissions etc) across all wallets
+   * Keep track of environment events (e.g. debugger, file permissions etc) across all wallets
    * Not an optional service
    */
-  private static SecurityCheckingService securityCheckingService;
+  private static EnvironmentCheckingService environmentCheckingService;
 
   /**
    * Keep track of shutdown events and ensure the configuration is persisted
@@ -94,10 +93,16 @@ public class CoreServices {
   private static Optional<BitcoinNetworkService> bitcoinNetworkService = Optional.absent();
 
   /**
-   * Keep track of the hardware wallet service for the application
-   * Optional service if system does not support hardware wallets (or none attached)
+   * Keep track of the various hardware wallet services for the application
+   * Empty if system does not support hardware wallets (or none attached)
+   * Device listed in position 0 is the active one for the current session
    */
-  private static Optional<HardwareWalletService> hardwareWalletService = Optional.absent();
+  private static List<Optional<HardwareWalletService>> hardwareWalletServices = Lists.newArrayList();
+
+  /**
+   * Keep track of the current hardware wallet service
+   */
+  private static Optional<HardwareWalletService> currentHardwareWalletService = Optional.absent();
 
   /**
    * Keeps track of the contact service for the current wallet
@@ -112,12 +117,6 @@ public class CoreServices {
   private static Optional<WalletService> walletService = Optional.absent();
 
   /**
-   * Keeps track of the history service for the current wallet
-   * Optional service until wallet is unlocked
-   */
-  private static Optional<PersistentHistoryService> historyService = Optional.absent();
-
-  /**
    * Keeps track of the backup service for the current wallet
    * Optional service until wallet is unlocked
    */
@@ -126,7 +125,12 @@ public class CoreServices {
   /**
    * Manages CoreService startup and shutdown operations
    */
-  private static ListeningExecutorService coreServices = SafeExecutors.newFixedThreadPool(10, "core-services");
+  private static volatile ListeningExecutorService coreServices = null;
+  private static Context context;
+
+  public static Context getContext() {
+    return context;
+  }
 
   /**
    * Utilities have a private constructor
@@ -135,19 +139,11 @@ public class CoreServices {
   }
 
   /**
-   * <p>Initialises the core services, and can act as an independent starting point for headless operations</p>
-   *
-   * @param args Any command line arguments
+   * Start the bare minimum to allow correct operation
    */
-  public static void main(String[] args) {
+  public static void bootstrap() {
 
-    // Order is important here
-    applicationEventService = new ApplicationEventService();
-    securityCheckingService = new SecurityCheckingService();
     configurationService = new ConfigurationService();
-
-    // Start the logging factory (see later for instance)
-    LoggingFactory.bootstrap();
 
     // Start the configuration service to ensure shutdown events are trapped
     configurationService.start();
@@ -157,7 +153,7 @@ public class CoreServices {
     try (InputStream is = new FileInputStream(InstallationManager.getConfigurationFile())) {
       // Load configuration (providing a default if none exists)
       configuration = Yaml.readYaml(is, Configuration.class);
-    } catch (IOException e) {
+    } catch (YAMLException | IOException e) {
       configuration = Optional.absent();
     }
 
@@ -169,11 +165,34 @@ public class CoreServices {
       Configurations.currentConfiguration = Configurations.newDefaultConfiguration();
     }
 
+    // Set up the bitcoinj context
+    context = new Context(NetworkParameters.fromID(NetworkParameters.ID_MAINNET));
+    log.debug("Context identity: {}", System.identityHashCode(context));
+
+    // Ensure any errors can be reported
+    ExceptionHandler.registerExceptionHandler();
+  }
+
+  /**
+   * <p>Initialises the core services, and can act as an independent starting point for headless operations</p>
+   *
+   * @param args Any command line arguments
+   */
+  public static void main(String[] args) {
+
+    // Order is important here
+    applicationEventService = new ApplicationEventService();
+    environmentCheckingService = new EnvironmentCheckingService();
+
+    if (configurationService == null) {
+      bootstrap();
+    }
+
     // Configure logging now that we have a configuration
     new LoggingFactory(Configurations.currentConfiguration.getLogging(), "MultiBit HD").configure();
 
-    // Start security checking service
-    securityCheckingService.start();
+    // Start environment checking service
+    environmentCheckingService.start();
 
     // Start application event service
     applicationEventService.start();
@@ -243,7 +262,6 @@ public class CoreServices {
 
     // Allow graceful shutdown of managed services in the correct order
     shutdownService(contactService, shutdownType);
-    shutdownService(historyService, shutdownType);
 
     // Close the Bitcoin network service (peer group, save wallet etc)
     shutdownService(bitcoinNetworkService, shutdownType);
@@ -254,7 +272,6 @@ public class CoreServices {
     bitcoinNetworkService = Optional.absent();
     contactService = Optional.absent();
     walletService = Optional.absent();
-    historyService = Optional.absent();
     backupService = Optional.absent();
 
   }
@@ -270,18 +287,14 @@ public class CoreServices {
   private static void shutdownApplicationSupportServices(ShutdownEvent.ShutdownType shutdownType) {
 
     // Shutdown non-managed services
-    if (hardwareWalletService.isPresent()) {
-      hardwareWalletService.get().stopAndWait();
-      // Need a fresh instance for correct restart
-      hardwareWalletService = Optional.absent();
-    }
+    stopHardwareWalletServices();
 
     // Allow graceful shutdown in the correct order
     if (configurationService != null) {
       configurationService.shutdownNow(shutdownType);
     }
-    if (securityCheckingService != null) {
-      securityCheckingService.shutdownNow(shutdownType);
+    if (environmentCheckingService != null) {
+      environmentCheckingService.shutdownNow(shutdownType);
     }
     if (applicationEventService != null) {
       applicationEventService.shutdownNow(shutdownType);
@@ -324,64 +337,131 @@ public class CoreServices {
   }
 
   /**
-   * @return Create a new hardware wallet service or return the extant one
+   * <p>Gets or creates but does not start the hardware wallet services</p>
+   *
+   * @return Create a list of optional hardware wallet services targeting different devices (Trezor, KeepKey etc)
    */
-  public static synchronized Optional<HardwareWalletService> getOrCreateHardwareWalletService() {
+  public static synchronized List<Optional<HardwareWalletService>> getOrCreateHardwareWalletServices() {
 
-    log.debug("Get hardware wallet service");
-    if (!hardwareWalletService.isPresent()) {
+    if (hardwareWalletServices.isEmpty() && Configurations.currentConfiguration.isTrezor()) {
+
+      log.debug("Attempting to create hardware wallet service entries");
 
       // Attempt Trezor support
-      if (Configurations.currentConfiguration.isTrezor()) {
+      hardwareWalletServices.add(TREZOR_WALLET_SERVICE_INDEX, createTrezorHardwareWalletService());
 
-        try {
-          // Use factory to statically bind a specific hardware wallet
-          TrezorV1HidHardwareWallet wallet = HardwareWallets.newUsbInstance(
-            TrezorV1HidHardwareWallet.class,
-            Optional.<Integer>absent(),
-            Optional.<Integer>absent(),
-            Optional.<String>absent()
-          );
-          // Wrap the hardware wallet in a suitable client to simplify message API
-          HardwareWalletClient client = new TrezorHardwareWalletClient(wallet);
-
-          // Wrap the client in a service for high level API suitable for downstream applications
-          hardwareWalletService = Optional.of(new HardwareWalletService(client));
-
-        } catch (Throwable throwable) {
-          log.warn("Could not create the hardware wallet.", throwable);
-          hardwareWalletService = Optional.absent();
-        }
-      } else {
-        hardwareWalletService = Optional.absent();
-      }
+      // Attempt KeepKey support
+      hardwareWalletServices.add(KEEP_KEY_WALLET_SERVICE_INDEX, createKeepKeyHardwareWalletService());
 
     }
 
-    return hardwareWalletService;
+    // Ensure that we have absent entries if the list is still empty
+    if (hardwareWalletServices.isEmpty()) {
+      log.debug("No hardware wallet service enabled");
+      hardwareWalletServices.add(TREZOR_WALLET_SERVICE_INDEX, Optional.<HardwareWalletService>absent());
+      hardwareWalletServices.add(KEEP_KEY_WALLET_SERVICE_INDEX, Optional.<HardwareWalletService>absent());
+    }
 
+    return hardwareWalletServices;
+
+  }
+
+  /**
+   * @param walletMode The wallet mode
+   *
+   * @return The hardware wallet for the given mode (may not be present or active) - consider getCurrentHardwareWalletService instead
+   */
+  public static synchronized Optional<HardwareWalletService> getHardwareWalletService(WalletMode walletMode) {
+
+    if (walletMode == null) {
+      return Optional.absent();
+    }
+
+    log.debug("Get hardware wallet service for {}", walletMode.name());
+
+    switch (walletMode) {
+      case TREZOR:
+        return hardwareWalletServices.get(TREZOR_WALLET_SERVICE_INDEX);
+      case KEEP_KEY:
+        return hardwareWalletServices.get(KEEP_KEY_WALLET_SERVICE_INDEX);
+      default:
+        return Optional.absent();
+    }
+
+  }
+
+  /**
+   * <p>The selection rules are as follows:</p>
+   * <ol>
+   *   <li>If a current hardware wallet service is in place then use that (to avoid accidentally switching wallets during a session)</li>
+   *   <li>If no current hardware wallet is present, then check Trezor then KeepKey and so on</li>
+   *   <li>The first hardware wallet service in the "isDeviceReady" state is set as the current hardware wallet service</li>
+   * </ol>
+   *
+   * <p>Use the shutdown and restart hardware wallet methods to force a reset</p>
+   *
+   * @return The current hardware wallet service if present
+   */
+  public static Optional<HardwareWalletService> useFirstReadyHardwareWalletService() {
+
+    // Always use the current if it is present
+    if (currentHardwareWalletService.isPresent()) {
+      return currentHardwareWalletService;
+    }
+
+    Optional<HardwareWalletService> result;
+    if (hardwareWalletServices.get(TREZOR_WALLET_SERVICE_INDEX).isPresent()
+      && hardwareWalletServices.get(TREZOR_WALLET_SERVICE_INDEX).get().isDeviceReady()) {
+      // Trezor is ready
+      result = hardwareWalletServices.get(TREZOR_WALLET_SERVICE_INDEX);
+    } else if (hardwareWalletServices.get(KEEP_KEY_WALLET_SERVICE_INDEX).isPresent()
+      && hardwareWalletServices.get(KEEP_KEY_WALLET_SERVICE_INDEX).get().isDeviceReady()) {
+      // KeepKey is ready
+      result = hardwareWalletServices.get(KEEP_KEY_WALLET_SERVICE_INDEX);
+    } else {
+      // Nothing is ready
+      result = Optional.absent();
+    }
+
+    // Ensure the current hardware wallet service tracks the first ready if requested
+    currentHardwareWalletService = result;
+
+    return result;
+  }
+
+  /**
+   * @return The current hardware wallet service (set by first ready)
+   */
+  public static Optional<HardwareWalletService> getCurrentHardwareWalletService() {
+    return currentHardwareWalletService;
   }
 
   /**
    * Simplify FEST testing for hardware wallets
    *
-   * @param service The hardware wallet service to use
+   * @param hardwareWalletServices The hardware wallet services to use (simulates detection on the wire)
    */
-  public static void setHardwareWalletService(HardwareWalletService service) {
-    Preconditions.checkState(InstallationManager.unrestricted, "The hardware wallet service should only be set in the context of testing");
-    hardwareWalletService = Optional.of(service);
+  public static void setHardwareWalletServices(List<Optional<HardwareWalletService>> hardwareWalletServices) {
+    Preconditions.checkState(InstallationManager.unrestricted, "The hardware wallet services should only be set in the context of testing");
+    Preconditions.checkNotNull(hardwareWalletServices, "The hardware wallet services must be present");
+    CoreServices.hardwareWalletServices = hardwareWalletServices;
   }
 
   /**
-   * <p>Stop the hardware wallet service</p>
+   * <p>Stop the hardware wallet services</p>
    */
-  public static void stopHardwareWalletService() {
+  public static void stopHardwareWalletServices() {
 
     log.debug("Stop hardware wallet service (expect all subscribers to be purged)");
-    hardwareWalletService.get().stopAndWait();
 
-    // Clear the reference to avoid restart issues
-    hardwareWalletService = Optional.absent();
+    for (Optional<HardwareWalletService> hardwareWalletService : hardwareWalletServices) {
+      if (hardwareWalletService.isPresent()) {
+        hardwareWalletService.get().stopAndWait();
+      }
+    }
+
+    // Reset the list to empty to allow re-population later
+    hardwareWalletServices.clear();
 
   }
 
@@ -416,11 +496,11 @@ public class CoreServices {
   }
 
   /**
-   * @return The security checking service singleton
+   * @return The environment checking service singleton
    */
-  public static SecurityCheckingService getSecurityCheckingService() {
-    log.debug("Get security checking service");
-    return securityCheckingService;
+  public static EnvironmentCheckingService getEnvironmentCheckingService() {
+    log.debug("Get environment checking service");
+    return environmentCheckingService;
   }
 
   /**
@@ -461,6 +541,9 @@ public class CoreServices {
    * <p>This occurs on the CoreServices task thread</p>
    */
   public static synchronized void stopBitcoinNetworkService() {
+    if (coreServices == null) {
+      coreServices = SafeExecutors.newFixedThreadPool(10, "core-services");
+    }
 
     log.debug("Stop Bitcoin network service");
     coreServices.submit(
@@ -473,7 +556,6 @@ public class CoreServices {
           }
         }
       });
-
   }
 
   /**
@@ -492,16 +574,23 @@ public class CoreServices {
    */
   public static WalletService getOrCreateWalletService(WalletId walletId) {
 
-    log.debug("Get or create wallet service");
+    log.trace("Get or create wallet service");
 
     Preconditions.checkNotNull(walletId, "'walletId' must be present");
 
     // Check if the wallet service has been created for this wallet ID
-    File applicationDirectory = InstallationManager.getOrCreateApplicationDataDirectory();
-
     if (!walletService.isPresent()) {
+      File applicationDirectory = InstallationManager.getOrCreateApplicationDataDirectory();
+
       walletService = Optional.of(new WalletService(BitcoinNetwork.current().get()));
-      walletService.get().initialise(applicationDirectory, walletId);
+      try {
+        if (WalletManager.INSTANCE.getCurrentWalletSummary().isPresent()) {
+          CharSequence password = WalletManager.INSTANCE.getCurrentWalletSummary().get().getWalletPassword().getPassword();
+          walletService.get().initialise(applicationDirectory, walletId, password);
+        }
+      } catch (PaymentsLoadException ple) {
+        ExceptionHandler.handleThrowable(ple);
+      }
       walletService.get().start();
     }
 
@@ -510,9 +599,9 @@ public class CoreServices {
 
   }
 
-    /**
-     * @return The contact service for the current wallet
-     */
+  /**
+   * @return The contact service for the current wallet
+   */
   public static ContactService getCurrentContactService() {
 
     log.debug("Get current contact service");
@@ -522,58 +611,27 @@ public class CoreServices {
     Preconditions.checkState(currentWalletSummary.isPresent(), "'currentWalletSummary' must be present. No wallet is present.");
 
     WalletId walletId = currentWalletSummary.get().getWalletId();
+    CharSequence password = currentWalletSummary.get().getWalletPassword().getPassword();
 
-    return getOrCreateContactService(walletId);
+    return getOrCreateContactService(new WalletPassword(password, walletId));
   }
 
   /**
-   * @return The history service for the current wallet
-   */
-  public static HistoryService getCurrentHistoryService() {
-
-    log.debug("Get current history service");
-
-    Optional<WalletSummary> currentWalletSummary = WalletManager.INSTANCE.getCurrentWalletSummary();
-
-    Preconditions.checkState(currentWalletSummary.isPresent(), "'currentWalletSummary' must be present. No wallet is present.");
-
-    WalletPassword walletPassword = currentWalletSummary.get().getWalletPassword();
-
-    return getOrCreateHistoryService(walletPassword);
-  }
-
-  /**
-   * @return The history service for a wallet (single soft, multiple hard)
-   */
-  public static HistoryService getOrCreateHistoryService(WalletPassword walletPassword) {
-
-    log.debug("Get or create history service");
-
-    Preconditions.checkNotNull(walletPassword, "'walletPassword' must be present");
-
-    if (!historyService.isPresent()) {
-      historyService = Optional.of(new PersistentHistoryService(walletPassword));
-    }
-
-    // Return the existing or new history service
-    return historyService.get();
-
-  }
-
-  /**
-   * @param walletId The wallet ID for the wallet
+   * @param walletPassword The wallet ID for the wallet
    *
    * @return The contact service for a wallet
    */
-  public static ContactService getOrCreateContactService(WalletId walletId) {
+  public static ContactService getOrCreateContactService(WalletPassword walletPassword) {
 
     log.debug("Get or create contact service");
 
-    Preconditions.checkNotNull(walletId, "'walletId' must be present");
+    Preconditions.checkNotNull(walletPassword, "'walletPassword' must be present");
+    Preconditions.checkNotNull(walletPassword.getWalletId(), "'walletId' must be present");
+    Preconditions.checkNotNull(walletPassword.getPassword(), "'walletPassword' must be present");
 
     // Check if the contact service has been created for this wallet ID
     if (!contactService.isPresent()) {
-      contactService = Optional.of(new PersistentContactService(walletId));
+      contactService = Optional.of(new PersistentContactService(walletPassword));
     }
 
     // Return the existing or new contact service
@@ -581,41 +639,66 @@ public class CoreServices {
   }
 
   /**
-   * <p>Convenience method to log a new history event for the current wallet</p>
-   *
-   * @param localisedDescription The localised description text
-   */
-  public static void logHistory(String localisedDescription) {
-
-    // Get the current history service
-    HistoryService historyService = CoreServices.getCurrentHistoryService();
-
-    // Create the history entry and persist it
-    HistoryEntry historyEntry = historyService.newHistoryEntry(localisedDescription);
-    historyService.writeHistory();
-
-    // OK to let everyone else know
-    CoreEvents.fireHistoryChangedEvent(historyEntry);
-
-  }
-
-  /**
    * @return A BRIT fee service pointing to the live Matcher machine
    */
   public static FeeService createFeeService() throws CoreException {
+
     log.debug("Create fee service");
 
-    ClassLoader classloader = Thread.currentThread().getContextClassLoader();
-    InputStream pgpPublicKeyInputStream = classloader.getResourceAsStream(LIVE_MATCHER_PUBLIC_KEY_FILE);
-
     try {
-      PGPPublicKey matcherPublicKey = PGPUtils.readPublicKey(pgpPublicKeyInputStream);
-      URL matcherURL = new URL(LIVE_MATCHER_URL);
+      return BRITServices.newFeeService();
+    } catch (IOException | PGPException e) {
+      log.error("Failed to create the FeeService", e);
+      // Throw as ISE to trigger ExceptionHandler
+      throw new IllegalStateException("Failed to create the FeeService");
+    }
+  }
 
-      // Return the existing or new fee service
-      return new FeeService(matcherPublicKey, matcherURL);
-    } catch (Exception e) {
-      throw new CoreException(e);
+  /**
+   * @return A hardware wallet service for the Trezor device if present
+   */
+  private static synchronized Optional<HardwareWalletService> createTrezorHardwareWalletService() {
+    try {
+      // Use factory to statically bind a specific hardware wallet
+      TrezorV1HidHardwareWallet wallet = HardwareWallets.newUsbInstance(
+        TrezorV1HidHardwareWallet.class,
+        Optional.<Integer>absent(),
+        Optional.<Integer>absent(),
+        Optional.<String>absent()
+      );
+      // Wrap the hardware wallet in a suitable client to simplify message API
+      HardwareWalletClient client = new TrezorHardwareWalletClient(wallet);
+
+      // Wrap the client in a service for high level API suitable for downstream applications
+      return Optional.of(new HardwareWalletService(client));
+
+    } catch (Throwable throwable) {
+      log.warn("Could not create the hardware wallet.", throwable);
+      return Optional.absent();
+    }
+  }
+
+  /**
+   * @return A hardware wallet service for the KeepKey device if present
+   */
+  private static synchronized Optional<HardwareWalletService> createKeepKeyHardwareWalletService() {
+    try {
+      // Use factory to statically bind a specific hardware wallet
+      KeepKeyV1HidHardwareWallet wallet = HardwareWallets.newUsbInstance(
+        KeepKeyV1HidHardwareWallet.class,
+        Optional.<Integer>absent(),
+        Optional.<Integer>absent(),
+        Optional.<String>absent()
+      );
+      // Wrap the hardware wallet in a suitable client to simplify message API
+      HardwareWalletClient client = new KeepKeyHardwareWalletClient(wallet);
+
+      // Wrap the client in a service for high level API suitable for downstream applications
+      return Optional.of(new HardwareWalletService(client));
+
+    } catch (Throwable throwable) {
+      log.warn("Could not create the hardware wallet.", throwable);
+      return Optional.absent();
     }
   }
 }

@@ -4,7 +4,7 @@ import com.google.common.base.Optional;
 import net.miginfocom.swing.MigLayout;
 import org.bitcoinj.core.Coin;
 import org.bitcoinj.core.Wallet;
-import org.multibit.hd.brit.dto.FeeState;
+import org.multibit.hd.brit.core.dto.FeeState;
 import org.multibit.hd.core.config.Configuration;
 import org.multibit.hd.core.config.Configurations;
 import org.multibit.hd.ui.events.view.ViewEvents;
@@ -52,7 +52,7 @@ public class EmptyWalletConfirmPanelView extends AbstractWizardPanelView<EmptyWa
    */
   public EmptyWalletConfirmPanelView(AbstractWizard<EmptyWalletWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.EMPTY_WALLET_CONFIRM_TITLE, AwesomeIcon.FIRE);
+    super(wizard, panelName, AwesomeIcon.FIRE, MessageKey.EMPTY_WALLET_CONFIRM_TITLE);
 
   }
 
@@ -190,16 +190,10 @@ public class EmptyWalletConfirmPanelView extends AbstractWizardPanelView<EmptyWa
   public void afterShow() {
 
     // Start with Cancel having focus to avoid accidental confirmation
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        getCancelButton().requestFocusInWindow();
-        // Enable the Send button after showing since there is nothing to stop confirmation
-        // It should start disabled to avoid double click skipping the confirmation
-        ViewEvents.fireWizardButtonEnabledEvent(getPanelName(), WizardButton.NEXT, true);
-
-      }
-    });
+    getCancelButton().requestFocusInWindow();
+    // Enable the Send button after showing since there is nothing to stop confirmation
+    // It should start disabled to avoid double click skipping the confirmation
+    ViewEvents.fireWizardButtonEnabledEvent(getPanelName(), WizardButton.NEXT, true);
 
   }
 

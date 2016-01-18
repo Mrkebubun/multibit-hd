@@ -82,16 +82,16 @@ public class EnterAmountView extends AbstractComponentView<EnterAmountModel> {
     bitcoinAmountText = TextBoxes.newBitcoinAmount(BitcoinSymbol.maxSymbolicAmount().doubleValue());
     localAmountText = TextBoxes.newLocalAmount(999_999_999_999_999.9999);
 
-    Coin coinAmount = getModel().get().getCoinAmount();
+    Optional<Coin> coinAmount = getModel().get().getCoinAmount();
 
     // Set initial Bitcoin amount from the model (if non-zero)
-    if (!Coin.ZERO.equals(coinAmount)) {
+    if (coinAmount.isPresent() && !Coin.ZERO.equals(coinAmount.get())) {
 
       LanguageConfiguration languageConfiguration = Configurations.currentConfiguration.getLanguage();
       BitcoinConfiguration bitcoinConfiguration = Configurations.currentConfiguration.getBitcoin();
 
       String symbolicAmount = Formats.formatCoinAmount(
-        coinAmount,
+        coinAmount.or(Coin.ZERO),
         languageConfiguration,
         bitcoinConfiguration
       );
@@ -366,20 +366,24 @@ public class EnterAmountView extends AbstractComponentView<EnterAmountModel> {
             try {
 
               Coin coin = Coins.fromSymbolicAmount(value.get(), bitcoinSymbol);
-
-              // Apply the exchange rate
-              BigDecimal localAmount = Coins.toLocalAmount(coin, latestExchangeRateChangedEvent.get().getRate());
-
               // Update the model
               getModel().get().setCoinAmount(coin);
-              if (localAmount.compareTo(BigDecimal.ZERO) != 0) {
-                getModel().get().setLocalAmount(Optional.of(localAmount));
-              } else {
+
+              // Apply the exchange rate if present
+              BigDecimal exchangeRate = latestExchangeRateChangedEvent.get().getRate();
+              if (exchangeRate == null) {
                 getModel().get().setLocalAmount(Optional.<BigDecimal>absent());
+              } else {
+                BigDecimal localAmount = Coins.toLocalAmount(coin, exchangeRate);
+                if (localAmount.compareTo(BigDecimal.ZERO) != 0) {
+                  getModel().get().setLocalAmount(Optional.of(localAmount));
+                } else {
+                  getModel().get().setLocalAmount(Optional.<BigDecimal>absent());
+                }
+                // Use setValue for the local amount so that the display formatter
+                // will match the currency requirements
+                localAmountText.setValue(localAmount);
               }
-              // Use setValue for the local amount so that the display formatter
-              // will match the currency requirements
-              localAmountText.setValue(localAmount);
 
               // Give feedback to the user
               bitcoinAmountText.setBackground(Themes.currentTheme.dataEntryBackground());

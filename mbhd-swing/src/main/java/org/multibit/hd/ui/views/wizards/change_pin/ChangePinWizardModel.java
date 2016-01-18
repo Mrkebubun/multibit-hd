@@ -6,11 +6,15 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListeningExecutorService;
-import org.multibit.hd.core.concurrent.SafeExecutors;
+import org.multibit.commons.concurrent.SafeExecutors;
+import org.multibit.commons.utils.Dates;
+import org.multibit.hd.core.services.ApplicationEventService;
 import org.multibit.hd.core.services.CoreServices;
 import org.multibit.hd.hardware.core.HardwareWalletService;
 import org.multibit.hd.hardware.core.events.HardwareWalletEvent;
-import org.multibit.hd.hardware.core.messages.*;
+import org.multibit.hd.hardware.core.messages.Features;
+import org.multibit.hd.hardware.core.messages.PinMatrixRequest;
+import org.multibit.hd.hardware.core.messages.PinMatrixRequestType;
 import org.multibit.hd.ui.events.view.VerificationStatusChangedEvent;
 import org.multibit.hd.ui.events.view.ViewEvents;
 import org.multibit.hd.ui.languages.MessageKey;
@@ -127,7 +131,21 @@ public class ChangePinWizardModel extends AbstractHardwareWalletWizardModel<Chan
       case SELECT_OPTION:
 
         // Read the current features to establish PIN status
-        Features features = CoreServices.getOrCreateHardwareWalletService().get().getContext().getFeatures().get();
+        Features features;
+        Optional<HardwareWalletService> currentHardwareWalletService = CoreServices.getCurrentHardwareWalletService();
+        if (currentHardwareWalletService.isPresent()) {
+          if (currentHardwareWalletService.get().getContext().getFeatures().isPresent()) {
+            features = currentHardwareWalletService.get().getContext().getFeatures().get();
+          } else {
+            setReportMessageKey(MessageKey.HARDWARE_FAILURE_OPERATION);
+            state = ChangePinState.SHOW_REPORT;
+            break;
+          }
+        } else {
+          setReportMessageKey(MessageKey.HARDWARE_FAILURE_OPERATION);
+          state = ChangePinState.SHOW_REPORT;
+          break;
+        }
         hasPinProtection = features.hasPinProtection();
 
         if (removePin) {
@@ -278,7 +296,7 @@ public class ChangePinWizardModel extends AbstractHardwareWalletWizardModel<Chan
 
           log.debug("Request '{}' PIN", removePin ? "remove" : "change");
 
-          Optional<HardwareWalletService> hardwareWalletService = CoreServices.getOrCreateHardwareWalletService();
+          Optional<HardwareWalletService> hardwareWalletService = CoreServices.getCurrentHardwareWalletService();
 
           // Check if there is a wallet present
           if (hardwareWalletService.isPresent()) {
@@ -289,9 +307,9 @@ public class ChangePinWizardModel extends AbstractHardwareWalletWizardModel<Chan
 
           } else {
             if (removePin) {
-              requestRemovePinPanelView.setOperationText(MessageKey.TREZOR_FAILURE_OPERATION);
+              requestRemovePinPanelView.setOperationText(MessageKey.HARDWARE_FAILURE_OPERATION);
             } else {
-              requestChangePinPanelView.setOperationText(MessageKey.TREZOR_FAILURE_OPERATION);
+              requestChangePinPanelView.setOperationText(MessageKey.HARDWARE_FAILURE_OPERATION);
             }
           }
 
@@ -312,7 +330,7 @@ public class ChangePinWizardModel extends AbstractHardwareWalletWizardModel<Chan
         @Override
         public Boolean call() throws Exception {
 
-          Optional<HardwareWalletService> hardwareWalletServiceOptional = CoreServices.getOrCreateHardwareWalletService();
+          Optional<HardwareWalletService> hardwareWalletServiceOptional = CoreServices.getCurrentHardwareWalletService();
 
           if (hardwareWalletServiceOptional.isPresent()) {
 
@@ -356,7 +374,7 @@ public class ChangePinWizardModel extends AbstractHardwareWalletWizardModel<Chan
             case ENTER_NEW_PIN:
             case CONFIRM_NEW_PIN:
               state = ChangePinState.SHOW_REPORT;
-              setReportMessageKey(MessageKey.TREZOR_INCORRECT_PIN_FAILURE);
+              setReportMessageKey(MessageKey.HARDWARE_INCORRECT_PIN_FAILURE);
               setReportMessageStatus(false);
               break;
             default:
@@ -378,21 +396,21 @@ public class ChangePinWizardModel extends AbstractHardwareWalletWizardModel<Chan
       case ENTER_CURRENT_PIN:
         if (removePin) {
           state = ChangePinState.SHOW_REPORT;
-          setReportMessageKey(MessageKey.TREZOR_REMOVE_PIN_SUCCESS);
+          setReportMessageKey(MessageKey.HARDWARE_REMOVE_PIN_SUCCESS);
           setReportMessageStatus(true);
         }
         // Update the features for next time
-        CoreServices.getOrCreateHardwareWalletService().get().getContext().resetToAttached();
+        CoreServices.getCurrentHardwareWalletService().get().getContext().resetToAttached();
         break;
       case ENTER_NEW_PIN:
         state = ChangePinState.CONFIRM_NEW_PIN;
         break;
       case CONFIRM_NEW_PIN:
         state = ChangePinState.SHOW_REPORT;
-        setReportMessageKey(MessageKey.TREZOR_CHANGE_PIN_SUCCESS);
+        setReportMessageKey(MessageKey.HARDWARE_CHANGE_PIN_SUCCESS);
         setReportMessageStatus(true);
         // Update the features for next time
-        CoreServices.getOrCreateHardwareWalletService().get().getContext().resetToAttached();
+        CoreServices.getCurrentHardwareWalletService().get().getContext().resetToAttached();
         break;
       case SHOW_REPORT:
         break;
@@ -408,10 +426,14 @@ public class ChangePinWizardModel extends AbstractHardwareWalletWizardModel<Chan
     switch (state) {
 
       case CONFIRM_ADD_PIN:
-        state = ChangePinState.SELECT_OPTION;
+        state = ChangePinState.SHOW_REPORT;
+        setReportMessageKey(MessageKey.HARDWARE_ADD_PIN_FAILURE);
+        setReportMessageStatus(false);
         break;
       case CONFIRM_CHANGE_PIN:
-        state = ChangePinState.SELECT_OPTION;
+        state = ChangePinState.SHOW_REPORT;
+        setReportMessageKey(MessageKey.HARDWARE_CHANGE_PIN_FAILURE);
+        setReportMessageStatus(false);
         break;
       case CONFIRM_REMOVE_PIN:
         state = ChangePinState.SELECT_OPTION;
@@ -420,13 +442,16 @@ public class ChangePinWizardModel extends AbstractHardwareWalletWizardModel<Chan
       case ENTER_NEW_PIN:
       case CONFIRM_NEW_PIN:
         state = ChangePinState.SHOW_REPORT;
-        setReportMessageKey(MessageKey.TREZOR_INCORRECT_PIN_FAILURE);
+        setReportMessageKey(MessageKey.HARDWARE_INCORRECT_PIN_FAILURE);
         setReportMessageStatus(false);
         break;
       default:
         throw new IllegalStateException("Should not reach here from " + state.name());
 
     }
+
+    // Ignore device reset messages
+    ApplicationEventService.setIgnoreHardwareWalletEventsThreshold(Dates.nowUtc().plusSeconds(1));
 
   }
 }

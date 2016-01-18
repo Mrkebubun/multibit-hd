@@ -1,6 +1,7 @@
 package org.multibit.hd.ui.views.components.renderers;
 
-import org.multibit.hd.core.dto.PaymentRequestData;
+import org.multibit.hd.core.dto.MBHDPaymentRequestData;
+import org.multibit.hd.ui.views.themes.Themes;
 
 import javax.swing.*;
 import java.awt.*;
@@ -14,7 +15,7 @@ import java.awt.*;
  * @since 0.0.1
  *
  */
-public class PaymentRequestDataListCellRenderer extends JLabel implements ListCellRenderer<PaymentRequestData> {
+public class PaymentRequestDataListCellRenderer extends JLabel implements ListCellRenderer<MBHDPaymentRequestData> {
 
   public PaymentRequestDataListCellRenderer() {
 
@@ -24,18 +25,18 @@ public class PaymentRequestDataListCellRenderer extends JLabel implements ListCe
 
   public Component getListCellRendererComponent(
     JList list,
-    PaymentRequestData value,
+    MBHDPaymentRequestData value,
     int index,
     boolean isSelected,
     boolean cellHasFocus
   ) {
 
     if (isSelected) {
-      setBackground(list.getSelectionBackground());
-      setForeground(list.getSelectionForeground());
+      setBackground(Themes.currentTheme.tableRowSelectedBackground());
+      setForeground(Themes.currentTheme.inverseText());
     } else {
-      setBackground(list.getBackground());
-      setForeground(list.getForeground());
+      setBackground(Themes.currentTheme.dataEntryBackground());
+      setForeground(Themes.currentTheme.dataEntryText());
     }
 
     if (value != null) {

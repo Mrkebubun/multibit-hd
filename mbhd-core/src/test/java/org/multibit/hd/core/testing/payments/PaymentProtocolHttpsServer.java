@@ -1,13 +1,17 @@
 package org.multibit.hd.core.testing.payments;
 
 import com.google.common.base.Preconditions;
-import com.google.common.util.concurrent.FutureCallback;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.ListeningExecutorService;
+import com.google.common.util.concurrent.*;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import org.multibit.hd.core.managers.SSLManager;
-import org.multibit.hd.hardware.core.concurrent.SafeExecutors;
+import org.bitcoinj.crypto.TrustStoreLoader;
+import org.bitcoinj.params.MainNetParams;
+import org.multibit.commons.concurrent.SafeExecutors;
+import org.multibit.hd.core.config.Configurations;
+import org.multibit.hd.core.dto.PaymentSessionSummary;
+import org.multibit.hd.core.managers.HttpsManager;
+import org.multibit.hd.core.managers.InstallationManager;
+import org.multibit.hd.core.services.PaymentProtocolService;
+import org.multibit.hd.core.services.PaymentProtocolServiceTest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,6 +23,7 @@ import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.TrustManagerFactory;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.net.URL;
 import java.security.KeyStore;
 import java.util.concurrent.TimeUnit;
@@ -40,6 +45,43 @@ public class PaymentProtocolHttpsServer {
   private static ListeningExecutorService executorService = SafeExecutors.newSingleThreadExecutor("bip70-server");
 
   /**
+   * Start an https Payment Protocol server which can respond to a MultiBit HD instance
+   * Start MBHD with the commandline parameter "project dir"/fixtures/payments/localhost-signed-1milli.bitcoinpaymentrequest
+   * @param args No args are needed
+   */
+  public static void main(String[] args) {
+    InstallationManager.unrestricted = true;
+    Configurations.currentConfiguration = Configurations.newDefaultConfiguration();
+
+    PaymentProtocolHttpsServer server = new PaymentProtocolHttpsServer();
+
+    log.debug("Result of server.start() was {}", server.start());
+
+    // Add some responses - we consume one here (a PaymentRequest fixture) and then add three PaymentACKCallable responses
+    server.addFixture("/fixtures/payments/localhost-signed-1milli.bitcoinpaymentrequest");
+    server.addPaymentACKCallable();
+    server.addPaymentACKCallable();
+    server.addPaymentACKCallable();
+
+    // Probe it once to see if it is up
+    PaymentProtocolService paymentProtocolService = new PaymentProtocolService(MainNetParams.get());
+    paymentProtocolService.start();
+
+    final URI uri = URI.create(PaymentProtocolServiceTest.PAYMENT_REQUEST_BIP72_SINGLE);
+
+    // Wait until the HTTPS server is up before setting the trust store loader
+    TrustStoreLoader trustStoreLoader = new TrustStoreLoader.DefaultTrustStoreLoader();
+    final PaymentSessionSummary paymentSessionSummary = paymentProtocolService.probeForPaymentSession(uri, false, trustStoreLoader);
+    log.debug(paymentSessionSummary.toString());
+
+    // Runs forever
+    while (true) {
+      Uninterruptibles.sleepUninterruptibly(20, TimeUnit.SECONDS);
+      log.debug("Still running...");
+    }
+  }
+
+  /**
    * @return True if the server started OK
    */
   public boolean start() {
@@ -47,20 +89,20 @@ public class PaymentProtocolHttpsServer {
     InputStream is = null;
     try {
       log.debug("Initialise the trust store containing the trusted certificates (including localhost:8443)");
-      URL trustStoreUrl = PaymentProtocolHttpsServer.class.getResource("/mbhd-cacerts");
+      URL trustStoreUrl = PaymentProtocolHttpsServer.class.getResource("/mbhd-cacerts-with-localhost");
       System.setProperty("javax.net.ssl.trustStore", trustStoreUrl.getFile());
-      System.setProperty("javax.net.ssl.trustStorePassword", SSLManager.PASSPHRASE);
+      System.setProperty("javax.net.ssl.trustStorePassword", HttpsManager.PASSPHRASE);
 
       SSLContext sslContext = SSLContext.getInstance("TLS");
 
       log.debug("Initialise the key store containing the private server keys (CN=localhost is required)");
       KeyStore ks = KeyStore.getInstance("JKS");
       is = PaymentProtocolHttpsServer.class.getResourceAsStream("/localhost.jks");
-      ks.load(is, SSLManager.PASSPHRASE.toCharArray());
+      ks.load(is, HttpsManager.PASSPHRASE.toCharArray());
 
       log.debug("Initialise the key manager factory");
       KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-      kmf.init(ks, SSLManager.PASSPHRASE.toCharArray());
+      kmf.init(ks, HttpsManager.PASSPHRASE.toCharArray());
 
       log.debug("Initialise the trust manager factory");
       TrustManagerFactory tmf = TrustManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
@@ -122,6 +164,29 @@ public class PaymentProtocolHttpsServer {
     });
 
   }
+  /**
+    */
+   public void addPaymentACKCallable() {
+
+     Preconditions.checkState(!executorService.isTerminated(), "Executor service must not be terminated");
+
+     log.debug("Adding PaymentACKCallable");
+
+     ListenableFuture<Boolean> listenableFuture = executorService.submit(new PaymentACKCallable(serverSocket, "application/bitcoin-paymentack"));
+     Futures.addCallback(listenableFuture, new FutureCallback<Boolean>() {
+       @Override
+       public void onSuccess(@Nullable Boolean result) {
+
+         log.info("PaymentACKCallable served successfully");
+       }
+
+       @Override
+       public void onFailure(Throwable t) {
+         fail("Unexpected failure for PaymentACKCallable: ", t);
+       }
+     });
+
+   }
 
   /**
    * Remove all entries from the fixture queue and reset the executor service
@@ -150,4 +215,5 @@ public class PaymentProtocolHttpsServer {
     }
 
   }
+
 }

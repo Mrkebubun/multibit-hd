@@ -3,9 +3,9 @@ package org.multibit.hd.ui.views.wizards.welcome.restore_wallet;
 import com.google.common.base.Optional;
 import com.google.common.base.Strings;
 import net.miginfocom.swing.MigLayout;
-import org.multibit.hd.brit.seed_phrase.Bip39SeedPhraseGenerator;
-import org.multibit.hd.brit.seed_phrase.SeedPhraseGenerator;
-import org.multibit.hd.core.utils.Dates;
+import org.multibit.commons.utils.Dates;
+import org.multibit.hd.brit.core.seed_phrase.Bip39SeedPhraseGenerator;
+import org.multibit.hd.brit.core.seed_phrase.SeedPhraseGenerator;
 import org.multibit.hd.ui.events.view.ViewEvents;
 import org.multibit.hd.ui.languages.MessageKey;
 import org.multibit.hd.ui.views.components.Components;
@@ -45,7 +45,7 @@ public class RestoreWalletSeedPhrasePanelView extends AbstractWizardPanelView<We
    */
   public RestoreWalletSeedPhrasePanelView(AbstractWizard<WelcomeWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.RESTORE_WALLET_SEED_PHRASE_TITLE, AwesomeIcon.KEY);
+    super(wizard, panelName, AwesomeIcon.KEY, MessageKey.RESTORE_WALLET_SEED_PHRASE_TITLE);
 
   }
 
@@ -87,29 +87,18 @@ public class RestoreWalletSeedPhrasePanelView extends AbstractWizardPanelView<We
   @Override
   public void afterShow() {
 
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        enterSeedPhraseMaV.getView().requestInitialFocus();
-      }
-    });
+    enterSeedPhraseMaV.getView().requestInitialFocus();
 
   }
 
   @Override
   public void updateFromComponentModels(Optional componentModel) {
 
+    // Fire the decision events
+    ViewEvents.fireWizardButtonEnabledEvent(getPanelName(), WizardButton.NEXT, isNextEnabled());
 
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        // Fire the decision events
-        ViewEvents.fireWizardButtonEnabledEvent(getPanelName(), WizardButton.NEXT, isNextEnabled());
-
-        // Fire "seed phrase verification" event
-        ViewEvents.fireVerificationStatusChangedEvent(getPanelName() + ".seedphrase", isNextEnabled());
-      }
-    });
+    // Fire "seed phrase verification" event
+    ViewEvents.fireVerificationStatusChangedEvent(getPanelName() + ".seedphrase", isNextEnabled());
   }
 
   /**

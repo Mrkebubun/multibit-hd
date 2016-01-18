@@ -5,7 +5,10 @@ import com.google.common.base.Preconditions;
 import com.google.common.io.Resources;
 import com.google.protobuf.InvalidProtocolBufferException;
 import org.bitcoin.protocols.payments.Protos;
+import org.bitcoinj.core.Address;
+import org.bitcoinj.core.Coin;
 import org.bitcoinj.core.NetworkParameters;
+import org.bitcoinj.core.Transaction;
 import org.bitcoinj.crypto.TrustStoreLoader;
 import org.bitcoinj.protocols.payments.PaymentProtocol;
 import org.bitcoinj.protocols.payments.PaymentProtocolException;
@@ -17,11 +20,13 @@ import org.multibit.hd.core.events.ShutdownEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.security.*;
 import java.security.cert.X509Certificate;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -77,7 +82,7 @@ public class PaymentProtocolService extends AbstractService {
    * status message to determine any problems that were encountered and how to respond to them.</p>
    * <p>MultiBit HD policy is that anyone issuing payment requests with PKI should have them signed by some
    * kind of CA or omit them. If the CA is not available then the user must decide how to proceed. Consequently consuming code
-   * will have checkPKI set to true in the first instance and possibly false in the second.</p>
+   * will have checkPKI set to false and the probing process will determine the trust level after the session is created.</p>
    *
    * @param paymentRequestUri The URI referencing the PaymentRequest
    * @param checkPKI          True if the PKI details should be checked (recommended - see policy note)
@@ -94,7 +99,7 @@ public class PaymentProtocolService extends AbstractService {
     String scheme = paymentRequestUri.getScheme() == null ? "" : paymentRequestUri.getScheme();
     String hostName = paymentRequestUri.getHost() == null ? "" : paymentRequestUri.getHost();
 
-    Protos.PaymentRequest paymentRequest = null;
+    Protos.PaymentRequest paymentRequest;
 
     try {
 
@@ -103,27 +108,26 @@ public class PaymentProtocolService extends AbstractService {
       PaymentSession paymentSession = null;
 
       if (scheme.startsWith("bitcoin")) {
-        // Remote resource serving payment requests indirectly via BIP72 is supported in Bitcoinj
         final BitcoinURI bitcoinUri = new BitcoinURI(networkParameters, paymentRequestUri.toString());
         if (bitcoinUri.getPaymentRequestUrls().isEmpty()) {
-          // BIP 21 Bitcoin URI
+          log.debug("Treating as BIP21 resource");
           paymentSession = PaymentSession
             .createFromBitcoinUri(bitcoinUri, false, null)
             .get();
           return new PaymentSessionSummary(
             Optional.of(paymentSession),
-            PaymentSessionStatus.UNTRUSTED,
+            null, PaymentSessionStatus.UNTRUSTED,
             RAGStatus.PINK,
-            Optional.of(CoreMessageKey.PAYMENT_SESSION_PKI_INVALID),
-            Optional.<Object[]>fromNullable(new String[]{paymentSession.getMemo()})
+            CoreMessageKey.PAYMENT_SESSION_PKI_INVALID,
+            new String[]{paymentSession.getMemo()}
           );
         } else if (bitcoinUri.getPaymentRequestUrls().size() == 1) {
-          // Single attempt only
+          log.debug("Treating as single BIP72 resource");
           paymentSession = PaymentSession
             .createFromBitcoinUri(bitcoinUri, checkPKI, trustStoreLoader)
             .get(PAYMENT_REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } else {
-          // Multiple fallback URLs
+          log.debug("Treating as multiple BIP72 resource");
           for (String r : bitcoinUri.getPaymentRequestUrls()) {
             try {
               paymentSession = PaymentSession
@@ -132,57 +136,62 @@ public class PaymentProtocolService extends AbstractService {
               break;
             } catch (Exception e) {
               // In multiple mode any exception is considered a reason to move on to the next
+              // but we must trap the NPE later on
               log.warn("Payment request from '{}' produced an exception: {}", r, e.getMessage());
             }
           }
         }
 
       } else if (scheme.startsWith("http")) {
-        // Remote resource serving payment requests directly over HTTP/S is supported in Bitcoinj
+        log.debug("Treating as remote HTTP/S resource");
         paymentSession = PaymentSession
           .createFromUrl(paymentRequestUri.toString(), checkPKI, trustStoreLoader)
           .get(PAYMENT_REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
       } else if (scheme.startsWith("file")) {
-        // File based resource
+        log.debug("Treating as file based resource");
         byte[] paymentRequestBytes = Resources.toByteArray(paymentRequestUri.toURL());
         paymentRequest = Protos.PaymentRequest.parseFrom(paymentRequestBytes);
         paymentSession = new PaymentSession(paymentRequest, checkPKI, trustStoreLoader);
 
       } else {
-        // Assume classpath resource
+        log.debug("Treating as classpath based resource");
         InputStream inputStream = PaymentProtocolService.class.getResourceAsStream(paymentRequestUri.toString());
         paymentRequest = Protos.PaymentRequest.parseFrom(inputStream);
         paymentSession = new PaymentSession(paymentRequest, checkPKI, trustStoreLoader);
 
       }
 
+      // Check if payment session was created (all fallback URLs may have failed)
+      if (paymentSession == null) {
+        log.warn("Failed to create a payment session");
+        throw new PaymentProtocolException.InvalidPaymentRequestURL("All payment request URLs have failed");
+      }
+
       // Determine confidence in the payment request
-      if (!checkPKI && paymentSession != null) {
+      PaymentProtocol.PkiVerificationData pkiVerificationData = paymentSession.pkiVerificationData;
+      if (!checkPKI) {
         final TrustStoreLoader loader = trustStoreLoader != null ? trustStoreLoader : new TrustStoreLoader.DefaultTrustStoreLoader();
         try {
-          PaymentProtocol.verifyPaymentRequestPki(
+          // Override the earlier PKI verification data (likely to be null since not checked)
+          pkiVerificationData = PaymentProtocol.verifyPaymentRequestPki(
             paymentSession.getPaymentRequest(),
             loader.getKeyStore()
           );
 
-        } catch (PaymentProtocolException e) {
-          return PaymentSessionSummary.newPaymentSessionAlmostOK(paymentSession, e);
-        } catch (KeyStoreException e) {
+        } catch (PaymentProtocolException | KeyStoreException e) {
           return PaymentSessionSummary.newPaymentSessionAlmostOK(paymentSession, e);
         }
+
       }
 
-      // Handy code to copy a payment request to local file system
-//      OutputStream os = new FileOutputStream(new File("example.bitcoinpaymentrequest"));
-//      paymentSession.getPaymentRequest().writeTo(os);
-
       // Must be OK to be here
-      return PaymentSessionSummary.newPaymentSessionOK(paymentSession);
+      log.debug("Created payment session summary");
+      return PaymentSessionSummary.newPaymentSessionOK(paymentSession, pkiVerificationData);
 
     } catch (PaymentProtocolException e) {
       // We can be more specific about handling the error
-      return PaymentSessionSummary.newPaymentSessionFromException(e, paymentRequest, hostName);
+      return PaymentSessionSummary.newPaymentSessionFromException(e, hostName);
     } catch (BitcoinURIParseException e) {
       return PaymentSessionSummary.newPaymentSessionFromException(e, hostName);
     } catch (ExecutionException e) {
@@ -198,15 +207,12 @@ public class PaymentProtocolService extends AbstractService {
     } catch (TimeoutException e) {
       return PaymentSessionSummary.newPaymentSessionFromException(e, hostName);
     }
-
   }
 
   /**
-   *
    * @return A new signed BIP70 PaymentRequest or absent
    */
-  public Optional<Protos.PaymentRequest> newSignedPaymentRequest(SignedPaymentRequestSummary signedPaymentRequestSummary) {
-
+  public Optional<Protos.PaymentRequest> newSignedPaymentRequest(SignedPaymentRequestSummary signedPaymentRequestSummary) throws NoSuchAlgorithmException {
     KeyStore keyStore = signedPaymentRequestSummary.getKeyStore();
     String keyAlias = signedPaymentRequestSummary.getKeyAlias();
     char[] keyStorePassword = signedPaymentRequestSummary.getKeyStorePassword();
@@ -246,17 +252,32 @@ public class PaymentProtocolService extends AbstractService {
 
       return Optional.of(paymentRequest.build());
 
-    } catch (KeyStoreException e) {
-      e.printStackTrace();
-    } catch (UnrecoverableKeyException e) {
-      e.printStackTrace();
-    } catch (NoSuchAlgorithmException e) {
-      e.printStackTrace();
+    } catch (KeyStoreException | UnrecoverableKeyException e) {
+      log.error("Unexpected error in payment request", e);
     }
 
     // Must have failed to be here
     return Optional.absent();
-
   }
 
-}
+  /**
+   * @param merchantData The merchant data bytes (from the PaymentRequest) to reference
+   * @param transactions The transactions that paid the payment request
+   * @param refundAmount The amount to refund
+   * @param refundAddress The refund address
+   * @param paymentMemo The memo for the payment
+   * @return a new BIP70 payment
+   */
+  public Optional<Protos.Payment> newPayment(byte[] merchantData, List<Transaction> transactions, Coin refundAmount, Address refundAddress, String paymentMemo) {
+        return Optional.of(PaymentProtocol.createPaymentMessage(transactions, refundAmount, refundAddress, paymentMemo, merchantData));
+  }
+
+  /**
+    * @param payment The BIP70 payment to reference
+    * @param paymentACKMemo The memo for the paymentACK
+    * @return a new BIP70 payment
+    */
+   public Optional<Protos.PaymentACK> newPaymentACK(Protos.Payment payment, String paymentACKMemo) {
+     return Optional.of(PaymentProtocol.createPaymentAck(payment, paymentACKMemo));
+   }
+ }

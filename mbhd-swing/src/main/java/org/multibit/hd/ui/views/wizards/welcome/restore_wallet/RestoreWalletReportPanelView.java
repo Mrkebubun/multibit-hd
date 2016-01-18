@@ -1,29 +1,25 @@
 package org.multibit.hd.ui.views.wizards.welcome.restore_wallet;
 
-import com.google.common.base.Charsets;
-import com.google.common.base.Joiner;
-import com.google.common.base.Optional;
-import com.google.common.base.Preconditions;
+import com.google.common.base.*;
 import com.google.common.eventbus.Subscribe;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.Uninterruptibles;
 import net.miginfocom.swing.MigLayout;
 import org.bitcoinj.crypto.MnemonicCode;
 import org.joda.time.DateTime;
-import org.multibit.hd.brit.seed_phrase.Bip39SeedPhraseGenerator;
-import org.multibit.hd.brit.seed_phrase.SeedPhraseGenerator;
-import org.multibit.hd.core.concurrent.SafeExecutors;
+import org.multibit.commons.concurrent.SafeExecutors;
+import org.multibit.commons.crypto.AESUtils;
+import org.multibit.commons.utils.Dates;
+import org.multibit.hd.brit.core.seed_phrase.Bip39SeedPhraseGenerator;
+import org.multibit.hd.brit.core.seed_phrase.SeedPhraseGenerator;
 import org.multibit.hd.core.config.Configurations;
-import org.multibit.hd.core.crypto.AESUtils;
 import org.multibit.hd.core.dto.*;
 import org.multibit.hd.core.events.BitcoinNetworkChangedEvent;
 import org.multibit.hd.core.managers.BackupManager;
+import org.multibit.hd.core.managers.HttpsManager;
 import org.multibit.hd.core.managers.InstallationManager;
-import org.multibit.hd.core.managers.SSLManager;
 import org.multibit.hd.core.managers.WalletManager;
-import org.multibit.hd.core.services.BitcoinNetworkService;
 import org.multibit.hd.core.services.CoreServices;
-import org.multibit.hd.core.utils.Dates;
 import org.multibit.hd.hardware.core.HardwareWalletService;
 import org.multibit.hd.ui.MultiBitUI;
 import org.multibit.hd.ui.events.view.ViewEvents;
@@ -79,12 +75,17 @@ public class RestoreWalletReportPanelView extends AbstractWizardPanelView<Welcom
   private ListeningExecutorService restoreWalletExecutorService;
 
   /**
+   * The earliest possible HD wallet seed to provide a default during restore operation
+   */
+  public final static String EARLIEST_HD_TIMESTAMP = "1826/80";
+
+  /**
    * @param wizard    The wizard managing the states
    * @param panelName The panel name to filter events from components
    */
   public RestoreWalletReportPanelView(AbstractWizard<WelcomeWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.RESTORE_WALLET_REPORT_TITLE, AwesomeIcon.FILE_TEXT);
+    super(wizard, panelName, AwesomeIcon.FILE_TEXT, MessageKey.RESTORE_WALLET_REPORT_TITLE);
 
   }
 
@@ -307,6 +308,7 @@ public class RestoreWalletReportPanelView extends AbstractWizardPanelView<Welcom
     Uninterruptibles.sleepUninterruptibly(250, TimeUnit.MILLISECONDS);
 
     final boolean walletCreatedStatus = handleCreateWalletStatus(model);
+    log.debug("Wallet created status: {}", walletCreatedStatus);
 
     // Update created wallet status
     SwingUtilities.invokeLater(
@@ -451,11 +453,12 @@ public class RestoreWalletReportPanelView extends AbstractWizardPanelView<Welcom
     try {
       // Attempt to install the CA certifications for the exchanges and MultiBit.org
       // Configure SSL certificates without forcing
-      SSLManager.INSTANCE.installCACertificates(
+      HttpsManager.INSTANCE.installCACertificates(
         InstallationManager.getOrCreateApplicationDataDirectory(),
         InstallationManager.CA_CERTS_NAME,
-        null, false);
-
+        null, // Use default host list
+        false // Do not force loading if they are already present
+      );
       return true;
 
     } catch (Exception e) {
@@ -490,7 +493,7 @@ public class RestoreWalletReportPanelView extends AbstractWizardPanelView<Welcom
    * Create a wallet from a seed phrase, timestamp and credentials
    * @param seedPhrase the seed phrase to use in the restore
    * @param walletTypeToRestore the type of wallet to restore (one of the WalletType enum values)
-   * @param timestamp the string format of the timestamp to use in the restore. May be blank.
+   * @param timestamp the string format of the timestamp to use in the restore. May be blank in which case the earliest HD birth date is used
    * @param password the password to use to secure the newly created wallet
    */
   private boolean createWalletFromSeedPhraseAndTimestamp(List<String> seedPhrase, WalletType walletTypeToRestore, String timestamp, String password) {
@@ -508,6 +511,11 @@ public class RestoreWalletReportPanelView extends AbstractWizardPanelView<Welcom
       // Locate the user data directory
       File applicationDataDirectory = InstallationManager.getOrCreateApplicationDataDirectory();
 
+      if (Strings.isNullOrEmpty(timestamp)) {
+        // Use the earliest possible HD wallet birthday
+        timestamp = EARLIEST_HD_TIMESTAMP;
+      }
+
       DateTime replayDate = Dates.parseSeedTimestamp(timestamp);
 
       // Provide some default text
@@ -522,14 +530,14 @@ public class RestoreWalletReportPanelView extends AbstractWizardPanelView<Welcom
       switch (walletTypeToRestore) {
         case TREZOR_SOFT_WALLET: {
         // Create Trezor soft wallet
-        WalletManager.INSTANCE.getOrCreateTrezorSoftWalletSummaryFromSeedPhrase(
-          applicationDataDirectory,
-          Joiner.on(" ").join(seedPhrase),
-          Dates.thenInSeconds(replayDate),
-          password,
-          name,
-          notes,
-          true);
+        WalletManager.INSTANCE.getOrCreateTrezorCloneSoftWalletSummaryFromSeedPhrase(
+                applicationDataDirectory,
+                Joiner.on(" ").join(seedPhrase),
+                Dates.thenInSeconds(replayDate),
+                password,
+                name,
+                notes,
+                true);
           return true;
         }
         case MBHD_SOFT_WALLET_BIP32: {
@@ -571,7 +579,7 @@ public class RestoreWalletReportPanelView extends AbstractWizardPanelView<Welcom
       return false;
     }
 
-    log.debug("Loading wallet backup '" + selectedBackupSummaryModel.getValue().getFile() + "'");
+    log.debug("Loading soft wallet backup '" + selectedBackupSummaryModel.getValue().getFile() + "'");
     try {
 
       WalletId loadedWalletId = BackupManager.INSTANCE.loadZipBackup(selectedBackupSummaryModel.getValue().getFile(), seedPhrase);
@@ -587,23 +595,21 @@ public class RestoreWalletReportPanelView extends AbstractWizardPanelView<Welcom
       WalletSummary walletSummary = WalletManager.getOrCreateWalletSummary(new File(walletRoot), loadedWalletId);
 
       KeyParameter backupAESKey = AESUtils.createAESKey(seed, WalletManager.scryptSalt());
-      byte[] decryptedPaddedWalletPasswordBytes = org.multibit.hd.brit.crypto.AESUtils.decrypt(
+      byte[] decryptedPaddedWalletPasswordBytes = org.multibit.commons.crypto.AESUtils.decrypt(
         walletSummary.getEncryptedPassword(),
         backupAESKey,
         WalletManager.aesInitialisationVector());
       byte[] decryptedWalletPasswordBytes = WalletManager.unpadPasswordBytes(decryptedPaddedWalletPasswordBytes);
       String decryptedWalletPassword = new String(decryptedWalletPasswordBytes, "UTF8");
 
-      // Start the Bitcoin network and synchronize the wallet
-      BitcoinNetworkService bitcoinNetworkService = CoreServices.getOrCreateBitcoinNetworkService();
-
-      // Open the wallet and synchronize the wallet
-      WalletManager.INSTANCE.openWalletFromWalletId(
+      // Attempt to open the wallet
+      final Optional<WalletSummary> walletSummaryOptional = WalletManager.INSTANCE.openWalletFromWalletId(
         InstallationManager.getOrCreateApplicationDataDirectory(),
         loadedWalletId,
         decryptedWalletPassword);
 
-      return bitcoinNetworkService.isStartedOk();
+      // If the wallet is present then it was opened successfully
+      return walletSummaryOptional.isPresent();
 
     } catch (Exception e) {
       log.error("Failed to restore wallet from seed phrase.", e);
@@ -628,11 +634,11 @@ public class RestoreWalletReportPanelView extends AbstractWizardPanelView<Welcom
       return false;
     }
 
-    log.debug("Loading wallet backup '" + selectedBackupSummaryModel.getValue().getFile() + "'");
+    log.debug("Loading hard wallet backup '" + selectedBackupSummaryModel.getValue().getFile() + "'");
     try {
       // For Trezor hard wallets the backups are encrypted with the entropy derived password
       String walletPassword = null;
-      Optional<HardwareWalletService> hardwareWalletService = CoreServices.getOrCreateHardwareWalletService();
+      Optional<HardwareWalletService> hardwareWalletService = CoreServices.getCurrentHardwareWalletService();
       if (hardwareWalletService.isPresent() && hardwareWalletService.get().getContext().getEntropy().isPresent()) {
         walletPassword = Hex.toHexString(hardwareWalletService.get().getContext().getEntropy().get());
       }
@@ -646,16 +652,14 @@ public class RestoreWalletReportPanelView extends AbstractWizardPanelView<Welcom
 
       WalletId loadedWalletId = BackupManager.INSTANCE.loadZipBackup(selectedBackupSummaryModel.getValue().getFile(), backupAESKey);
 
-      // Start the Bitcoin network and synchronize the wallet
-      BitcoinNetworkService bitcoinNetworkService = CoreServices.getOrCreateBitcoinNetworkService();
-
-      // Open the wallet and synchronize the wallet
-      WalletManager.INSTANCE.openWalletFromWalletId(
+      // Attempt to open the wallet
+      final Optional<WalletSummary> walletSummaryOptional = WalletManager.INSTANCE.openWalletFromWalletId(
         InstallationManager.getOrCreateApplicationDataDirectory(),
         loadedWalletId,
         walletPassword);
 
-      return bitcoinNetworkService.isStartedOk();
+      // If the wallet is present then it was opened successfully
+      return walletSummaryOptional.isPresent();
 
     } catch (Exception e) {
       log.error("Failed to restore Trezor hard wallet.", e);

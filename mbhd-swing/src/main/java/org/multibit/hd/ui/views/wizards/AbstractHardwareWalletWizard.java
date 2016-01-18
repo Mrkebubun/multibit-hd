@@ -2,7 +2,9 @@ package org.multibit.hd.ui.views.wizards;
 
 import com.google.common.base.Optional;
 import com.google.common.eventbus.Subscribe;
-import org.multibit.hd.core.utils.Dates;
+import org.multibit.hd.core.services.ApplicationEventService;
+import org.multibit.hd.core.services.CoreServices;
+import org.multibit.hd.hardware.core.HardwareWalletService;
 import org.multibit.hd.hardware.core.events.HardwareWalletEvent;
 import org.multibit.hd.hardware.core.events.HardwareWalletEvents;
 import org.slf4j.Logger;
@@ -35,18 +37,18 @@ public abstract class AbstractHardwareWalletWizard<M extends AbstractHardwareWal
   }
 
   /**
-     * @param wizardModel     The overall wizard data model containing the aggregate information of all components in the wizard
-     * @param isExiting       True if the exit button should trigger an application shutdown
-     * @param wizardParameter An optional parameter that can be referenced during construction
-     * @param escapeIsCancel  A press of the ESC key cancels the wizard
-     */
-    protected AbstractHardwareWalletWizard(M wizardModel, boolean isExiting, Optional wizardParameter, boolean escapeIsCancel) {
-      super(wizardModel, isExiting, wizardParameter, escapeIsCancel);
+   * @param wizardModel     The overall wizard data model containing the aggregate information of all components in the wizard
+   * @param isExiting       True if the exit button should trigger an application shutdown
+   * @param wizardParameter An optional parameter that can be referenced during construction
+   * @param escapeIsCancel  A press of the ESC key cancels the wizard
+   */
+  protected AbstractHardwareWalletWizard(M wizardModel, boolean isExiting, Optional wizardParameter, boolean escapeIsCancel) {
+    super(wizardModel, isExiting, wizardParameter, escapeIsCancel);
 
-      // All hardware wallet wizards can receive hardware wallet events
-      HardwareWalletEvents.subscribe(this);
+    // All hardware wallet wizards can receive hardware wallet events
+    HardwareWalletEvents.subscribe(this);
 
-    }
+  }
 
   /**
    * Unregister from hardware wallet events - called during the hide process
@@ -55,6 +57,31 @@ public abstract class AbstractHardwareWalletWizard<M extends AbstractHardwareWal
   public void unsubscribe() {
     super.unsubscribe();
     HardwareWalletEvents.unsubscribe(this);
+  }
+
+  @Override
+  public void hide(final String panelName, final boolean isExitCancel) {
+
+    log.debug("Hide requested for {} with exitCancel {} ", panelName, isExitCancel);
+
+    if (!wizardViewMap.containsKey(panelName)) {
+      log.error("'{}' is not a valid panel name. Check the panel has been registered in the view map. Registered panels are\n{}", wizardViewMap.keySet());
+      return;
+    }
+
+    final AbstractWizardPanelView wizardPanelView = wizardViewMap.get(panelName);
+
+    // Provide warning that the panel is about to be hidden
+    if (wizardPanelView.beforeHide(isExitCancel)) {
+
+      // Ensure the hardware wallet is reset
+      getWizardModel().requestCancel();
+
+      // No cancellation so go ahead with the hide
+      handleHide(panelName, isExitCancel, wizardPanelView);
+
+    }
+
   }
 
   /**
@@ -198,6 +225,35 @@ public abstract class AbstractHardwareWalletWizard<M extends AbstractHardwareWal
 
           // Move to the "PIN entry" state
           getWizardModel().showPINEntry(event);
+
+          // Show the panel
+          show(getWizardModel().getPanelName());
+
+        }
+      });
+
+  }
+
+  /**
+   * <p>Inform the wizard model of a "passphrase entry"</p>
+   *
+   * @param event The originating event containing payload and context
+   */
+  public void handlePassphraseEntry(final HardwareWalletEvent event) {
+
+    SwingUtilities.invokeLater(
+      new Runnable() {
+        @Override
+        public void run() {
+          // Ensure the panel updates its model (the button is outside of the panel itself)
+          if (getWizardModel().getPanelName() != null) {
+            if (getWizardPanelView(getWizardModel().getPanelName()) != null) {
+              getWizardPanelView(getWizardModel().getPanelName()).updateFromComponentModels(Optional.absent());
+            }
+          }
+
+          // Move to the "passphrase entry" state
+          getWizardModel().showPassphraseEntry(event);
 
           // Show the panel
           show(getWizardModel().getPanelName());
@@ -444,9 +500,16 @@ public abstract class AbstractHardwareWalletWizard<M extends AbstractHardwareWal
 
     log.debug("{} Received hardware event: '{}'.", this, event.getEventType().name());
 
-    if (!Dates.nowUtc().isAfter(getWizardModel().getIgnoreHardwareWalletEventsThreshold())) {
+    if (!ApplicationEventService.isHardwareWalletEventAllowed()) {
       log.debug("Ignoring device event due to 'ignore threshold' still in force", event);
       return;
+    }
+
+    // Check if this is the first event from the hardware wallet
+    Optional<HardwareWalletService> currentHardwareWalletService = CoreServices.getCurrentHardwareWalletService();
+    if (!currentHardwareWalletService.isPresent()) {
+      // Allow time for the current hardware wallet to initialise
+      CoreServices.useFirstReadyHardwareWalletService();
     }
 
     switch (event.getEventType()) {
@@ -464,6 +527,9 @@ public abstract class AbstractHardwareWalletWizard<M extends AbstractHardwareWal
         break;
       case SHOW_PIN_ENTRY:
         handlePINEntry(event);
+        break;
+      case SHOW_PASSPHRASE_ENTRY:
+        handlePassphraseEntry(event);
         break;
       case SHOW_BUTTON_PRESS:
         handleButtonPress(event);

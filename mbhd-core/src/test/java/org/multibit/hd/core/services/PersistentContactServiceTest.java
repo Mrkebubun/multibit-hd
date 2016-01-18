@@ -6,8 +6,9 @@ import org.bitcoinj.crypto.MnemonicCode;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.multibit.hd.brit.seed_phrase.Bip39SeedPhraseGenerator;
-import org.multibit.hd.brit.seed_phrase.SeedPhraseGenerator;
+import org.multibit.commons.utils.Dates;
+import org.multibit.hd.brit.core.seed_phrase.Bip39SeedPhraseGenerator;
+import org.multibit.hd.brit.core.seed_phrase.SeedPhraseGenerator;
 import org.multibit.hd.core.config.Configurations;
 import org.multibit.hd.core.dto.Contact;
 import org.multibit.hd.core.dto.WalletIdTest;
@@ -16,7 +17,6 @@ import org.multibit.hd.core.managers.BackupManager;
 import org.multibit.hd.core.managers.InstallationManager;
 import org.multibit.hd.core.managers.WalletManager;
 import org.multibit.hd.core.utils.Addresses;
-import org.multibit.hd.core.utils.Dates;
 
 import java.io.File;
 import java.util.List;
@@ -59,7 +59,7 @@ public class PersistentContactServiceTest {
 
     File contactDbFile = new File(applicationDirectory.getAbsolutePath() + File.separator + ContactService.CONTACTS_DATABASE_NAME);
 
-    contactService = new PersistentContactService(contactDbFile);
+    contactService = new PersistentContactService(contactDbFile, WalletServiceTest.PASSWORD);
     contactService.addDemoContacts();
 
   }
@@ -140,7 +140,7 @@ public class PersistentContactServiceTest {
     assertThat(allContacts.size()).isEqualTo(0);
 
     // Reload it - there should be the same number of contacts and the new contact should be available
-    contactService.loadContacts();
+    contactService.loadContacts(WalletManager.INSTANCE.getCurrentWalletSummary().get().getWalletPassword().getPassword());
 
     allContacts = contactService.allContacts();
 

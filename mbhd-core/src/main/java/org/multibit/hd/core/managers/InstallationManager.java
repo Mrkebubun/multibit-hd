@@ -4,7 +4,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.io.ByteStreams;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.multibit.hd.core.events.ShutdownEvent;
-import org.multibit.hd.core.files.SecureFiles;
+import org.multibit.commons.files.SecureFiles;
 import org.multibit.hd.core.utils.OSUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,7 +40,7 @@ public class InstallationManager {
   /**
    * The main MultiBit help site (HTTPS to allow secure connection without redirect, with fall back to local help on failure)
    */
-  public static final String MBHD_WEBSITE_HELP_DOMAIN = "https://beta.multibit.org";  // TODO remove beta when release-4.0.0 website pushed to multibit.org
+  public static final String MBHD_WEBSITE_HELP_DOMAIN = "https://multibit.org";
   public static final String MBHD_WEBSITE_HELP_BASE = MBHD_WEBSITE_HELP_DOMAIN + "/hd0.1";
 
   public static final String MBHD_APP_NAME = "MultiBitHD";
@@ -120,8 +120,7 @@ public class InstallationManager {
         currentApplicationDataDirectory = SecureFiles.createTemporaryDirectory();
         return currentApplicationDataDirectory;
       } catch (IOException e) {
-        log.error("Failed to create temporary directory", e);
-        return null;
+        throw new IllegalStateException("Cannot run without access to temporary directory.", e);
       }
     } else {
 

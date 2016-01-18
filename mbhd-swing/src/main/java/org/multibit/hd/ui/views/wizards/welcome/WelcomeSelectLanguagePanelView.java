@@ -46,7 +46,7 @@ public class WelcomeSelectLanguagePanelView extends AbstractWizardPanelView<Welc
    */
   public WelcomeSelectLanguagePanelView(AbstractWizard<WelcomeWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.SELECT_LANGUAGE_TITLE, AwesomeIcon.GLOBE);
+    super(wizard, panelName, AwesomeIcon.GLOBE, MessageKey.SELECT_LANGUAGE_TITLE);
 
   }
 
@@ -66,14 +66,13 @@ public class WelcomeSelectLanguagePanelView extends AbstractWizardPanelView<Welc
     contentPanel.setLayout(new MigLayout(
       Panels.migXYLayout(),
       "[][]", // Column constraints
-      "[][]20[]30" // Row constraints
+      "[][]20[]20" // Row constraints
     ));
 
     languagesComboBox = ComboBoxes.newLanguagesComboBox(this, Languages.currentLocale());
 
     contentPanel.add(Labels.newSelectLanguageLabel(), "shrink");
     contentPanel.add(languagesComboBox, "growx," + MultiBitUI.COMBO_BOX_WIDTH_MIG + ",push,wrap");
-    contentPanel.add(Labels.newWelcomeNote(), "grow,push,span 2,wrap");
 
   }
 
@@ -95,14 +94,8 @@ public class WelcomeSelectLanguagePanelView extends AbstractWizardPanelView<Welc
   @Override
   public void afterShow() {
 
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
+    languagesComboBox.requestFocus();
 
-        languagesComboBox.requestFocus();
-
-      }
-    });
   }
 
   @Override
@@ -121,30 +114,38 @@ public class WelcomeSelectLanguagePanelView extends AbstractWizardPanelView<Welc
   public void actionPerformed(final ActionEvent e) {
 
     JComboBox source = (JComboBox) e.getSource();
-    String localeCode = LanguageKey.values()[source.getSelectedIndex()].getKey();
+    final String localeCode = LanguageKey.values()[source.getSelectedIndex()].getKey();
 
     log.debug("Language changed to '{}'", localeCode);
 
     // Prevent further events
     source.setEnabled(false);
 
-    // Determine the new locale
-    Locale newLocale = Languages.newLocaleFromCode(localeCode);
+    // Ensure the source is disabled before proceeding
+    // This removes the chance of triggering a light box failure due to the handover
+    // when using a mouse to change language
+    SwingUtilities.invokeLater(
+      new Runnable() {
+        @Override
+        public void run() {
+          // Determine the new locale
+          Locale newLocale = Languages.newLocaleFromCode(localeCode);
 
-    // Update the main configuration
-    Configuration newConfiguration = Configurations.currentConfiguration.deepCopy();
-    newConfiguration.getLanguage().setLocale(newLocale);
+          // Update the main configuration
+          Configuration newConfiguration = Configurations.currentConfiguration.deepCopy();
+          newConfiguration.getLanguage().setLocale(newLocale);
 
-    log.debug("Simulating a wizard close event with configuration change");
+          log.debug("Simulating a wizard close event with configuration change");
 
-    // Trigger the wizard hide process manually (no suitable button available)
-    // using a deferred hide (control passes directly to handleHide)
+          // Trigger the wizard hide process manually (no suitable button available)
+          // using a deferred hide (control passes directly to handleHide)
 
-    ViewEvents.fireWizardDeferredHideEvent(getPanelName(), false);
+          ViewEvents.fireWizardDeferredHideEvent(getPanelName(), false);
 
-    // Make the switch immediately
-    Configurations.switchConfiguration(newConfiguration);
-
+          // Make the switch immediately
+          Configurations.switchConfiguration(newConfiguration);
+        }
+      });
 
   }
 }

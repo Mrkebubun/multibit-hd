@@ -4,8 +4,8 @@ import com.google.common.base.Preconditions;
 import com.google.common.eventbus.Subscribe;
 import net.miginfocom.swing.MigLayout;
 import org.joda.time.DateTime;
+import org.multibit.commons.utils.Dates;
 import org.multibit.hd.core.config.Configurations;
-import org.multibit.hd.core.utils.Dates;
 import org.multibit.hd.ui.events.controller.ShowScreenEvent;
 import org.multibit.hd.ui.events.view.ViewEvents;
 import org.multibit.hd.ui.languages.Languages;
@@ -174,7 +174,14 @@ public class SidebarView extends AbstractView {
     sidebarTree.expandPath(walletPath);
 
     // Ensure we use the previous selection
-    Screen startingScreen = Screen.valueOf(Configurations.currentConfiguration.getAppearance().getCurrentScreen());
+    Screen startingScreen;
+    try {
+      startingScreen = Screen.valueOf(Configurations.currentConfiguration.getAppearance().getCurrentScreen());
+    } catch (IllegalArgumentException e) {
+      // Unknown starting screen - possibly an old configuration
+      // Default to same as configuration (safest option given network connectivity)
+      startingScreen = Screen.SEND_REQUEST;
+    }
     for (int row = 0; row < sidebarTree.getRowCount(); row++) {
       TreePath screenPath = sidebarTree.getPathForRow(row);
       if (screenPath != null) {

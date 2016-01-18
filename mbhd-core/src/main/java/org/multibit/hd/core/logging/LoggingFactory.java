@@ -21,16 +21,29 @@ import java.util.TimeZone;
  */
 public class LoggingFactory {
 
+  private static final org.slf4j.Logger log = LoggerFactory.getLogger(LoggingFactory.class);
+
   public static void bootstrap() {
 
-    // Initially configure for WARN+ console logging
+    // Initially configure for DEBUG console logging
     final LoggingConfiguration.ConsoleConfiguration console = new LoggingConfiguration.ConsoleConfiguration();
     console.setEnabled(true);
     console.setTimeZone(TimeZone.getDefault());
     console.setThreshold(Level.DEBUG);
 
     final Logger root = getCleanRoot();
-    root.addAppender(LogbackFactory.buildConsoleAppender(console, root.getLoggerContext(), null));
+    root.addAppender(LogbackFactory.buildConsoleAppender(
+        console,
+        root.getLoggerContext(),
+        null
+      ));
+
+    final LoggingConfiguration.FileConfiguration file = new LoggingConfiguration.FileConfiguration();
+    root.addAppender(LogbackFactory.buildFileAppender(file, root.getLoggerContext(), null));
+
+    // Add this to indicate that logging has bootstrapped with synchronous default settings
+    log.info("LoggingFactory bootstrap completed.");
+
   }
 
   private final LoggingConfiguration config;

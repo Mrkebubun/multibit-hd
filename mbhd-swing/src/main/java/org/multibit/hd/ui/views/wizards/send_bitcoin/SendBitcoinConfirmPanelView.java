@@ -1,15 +1,17 @@
 package org.multibit.hd.ui.views.wizards.send_bitcoin;
 
 import com.google.common.base.Optional;
+import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import net.miginfocom.swing.MigLayout;
 import org.bitcoinj.core.Coin;
 import org.bitcoinj.core.Wallet;
 import org.bitcoinj.uri.BitcoinURI;
-import org.multibit.hd.brit.dto.FeeState;
-import org.multibit.hd.brit.services.FeeService;
+import org.multibit.hd.brit.core.dto.FeeState;
+import org.multibit.hd.brit.core.services.FeeService;
 import org.multibit.hd.core.config.Configuration;
 import org.multibit.hd.core.config.Configurations;
+import org.multibit.hd.core.dto.PaymentRequestData;
 import org.multibit.hd.core.dto.WalletType;
 import org.multibit.hd.core.managers.WalletManager;
 import org.multibit.hd.ui.events.view.ViewEvents;
@@ -26,6 +28,8 @@ import org.multibit.hd.ui.views.fonts.AwesomeIcon;
 import org.multibit.hd.ui.views.wizards.AbstractWizard;
 import org.multibit.hd.ui.views.wizards.AbstractWizardPanelView;
 import org.multibit.hd.ui.views.wizards.WizardButton;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 
@@ -38,6 +42,8 @@ import javax.swing.*;
  * @since 0.0.1
  */
 public class SendBitcoinConfirmPanelView extends AbstractWizardPanelView<SendBitcoinWizardModel, SendBitcoinConfirmPanelModel> {
+
+  private static final Logger log = LoggerFactory.getLogger(SendBitcoinConfirmPanelView.class);
 
   // View components
   private JTextArea notesTextArea;
@@ -60,14 +66,11 @@ public class SendBitcoinConfirmPanelView extends AbstractWizardPanelView<SendBit
    * @param panelName The panel name for filtering component events
    */
   public SendBitcoinConfirmPanelView(AbstractWizard<SendBitcoinWizardModel> wizard, String panelName) {
-
-    super(wizard, panelName, MessageKey.CONFIRM_SEND_TITLE, AwesomeIcon.CLOUD_UPLOAD);
-
+    super(wizard, panelName, AwesomeIcon.CLOUD_UPLOAD, MessageKey.CONFIRM_SEND_TITLE);
   }
 
   @Override
   public void newPanelModel() {
-
     // Require a reference for the model
     enterPasswordMaV = Components.newEnterPasswordMaV(getPanelName());
 
@@ -83,7 +86,6 @@ public class SendBitcoinConfirmPanelView extends AbstractWizardPanelView<SendBit
 
     // Register components
     registerComponents(enterPasswordMaV);
-
   }
 
   @Override
@@ -123,26 +125,24 @@ public class SendBitcoinConfirmPanelView extends AbstractWizardPanelView<SendBit
     notesTextArea = TextBoxes.newEnterPrivateNotes(getWizardModel());
 
     // Apply any Payment Request parameters
-    if (getWizardModel().getPaymentSessionSummary().isPresent()) {
-      // User has received a Payment Request which may provide identify information
-      if (getWizardModel().getPkiVerificationData().isPresent()) {
-        // Use the display name as the recipient
-        recipientSummaryLabel = Labels.newValueLabel(getWizardModel().getPkiVerificationData().get().displayName);
-      } else {
+    if (getWizardModel().getPaymentRequestData().isPresent()) {
+      PaymentRequestData paymentRequestData = getWizardModel().getPaymentRequestData().get();
+
+      if (paymentRequestData.getIdentityDisplayName().isEmpty()) {
         // Unknown recipient
         recipientSummaryLabel = Labels.newValueLabel(Languages.safeText(MessageKey.NOT_AVAILABLE));
+      } else {
+        recipientSummaryLabel = Labels.newValueLabel(paymentRequestData.getIdentityDisplayName());
       }
 
       // Fill in the memo
-      notesTextArea.setText(getWizardModel().getPaymentSessionSummary().get().getPaymentSession().get().getMemo());
-
+      notesTextArea.setText(paymentRequestData.getNote());
     } else {
       recipientSummaryLabel = Labels.newRecipientSummary(getWizardModel().getRecipient());
     }
 
     // Apply any Bitcoin URI parameters
     if (getWizardModel().getBitcoinURI().isPresent()) {
-
       BitcoinURI uri = getWizardModel().getBitcoinURI().get();
       String notes = "";
       if (!Strings.isNullOrEmpty(uri.getLabel())) {
@@ -162,8 +162,8 @@ public class SendBitcoinConfirmPanelView extends AbstractWizardPanelView<SendBit
     contentPanel.setLayout(
       new MigLayout(
         Panels.migXYLayout(),
-        "[]10[250]10[120]10[120]10[]", // Column constraints
-        "[]10[]10[][][][][]10[][]" // Row constraints
+        "[]10[]4[]0[200]10[120]10[][]", // Column constraints
+        "[]10[]10[][][][][][]10[][]" // Row constraints
       ));
 
     clientFeeInfoLabel = Labels.newBlankLabel();
@@ -171,33 +171,36 @@ public class SendBitcoinConfirmPanelView extends AbstractWizardPanelView<SendBit
 
     runningTotalClientFeeInfoLabel = Labels.newClientFeeRunningTotal();
 
-    contentPanel.add(Labels.newConfirmSendAmount(), "span 5,push,wrap");
+    contentPanel.add(Labels.newConfirmSendAmount(), "span 7,push,wrap");
 
     contentPanel.add(Labels.newRecipient());
-    contentPanel.add(recipientSummaryLabel, "span 4,wrap");
+    contentPanel.add(recipientSummaryLabel, "span 6,wrap");
 
     contentPanel.add(Labels.newAmount(), "baseline");
-    contentPanel.add(transactionDisplayAmountMaV.getView().newComponentPanel(), "span 4,wrap");
+    contentPanel.add(transactionDisplayAmountMaV.getView().newComponentPanel(), "span 6,wrap");
 
     contentPanel.add(Labels.newTransactionFee(), "top");
-    contentPanel.add(transactionFeeDisplayAmountMaV.getView().newComponentPanel(), "span 4,wrap");
+    contentPanel.add(transactionFeeDisplayAmountMaV.getView().newComponentPanel(), "span 6,wrap");
+
+    contentPanel.add(Labels.newBlankLabel(), "top");
+    contentPanel.add(Panels.newHorizontalDashedSeparator(), "push, growx, span 6,wrap");
 
     contentPanel.add(Labels.newClientFee(), "top");
-    contentPanel.add(clientFeeDisplayAmountMaV.getView().newComponentPanel(), "top");
-    contentPanel.add(clientFeeInfoLabel, "top, span 2");
-    contentPanel.add(Labels.newBlankLabel(), "top, growx, push,wrap");
+    contentPanel.add(clientFeeDisplayAmountMaV.getView().newComponentPanel(), "top, shrink");
 
-    contentPanel.add(Labels.newBlankLabel(), "top");
-    contentPanel.add(Labels.newBlankLabel(), "top");
-    contentPanel.add(runningTotalClientFeeInfoLabel, "top");
-    contentPanel.add(runningTotalClientFeeDisplayAmountMaV.getView().newComponentPanel(), "top");
-    contentPanel.add(Labels.newBlankLabel(), "top, growx, push,wrap");
+    contentPanel.add(Labels.newBlankLabel(), "top, growx, span 2, push");
+    contentPanel.add(clientFeeInfoLabel, "top, span 3, wrap");
+
+    contentPanel.add(Labels.newBlankLabel(), "top, span 4");
+    contentPanel.add(runningTotalClientFeeInfoLabel, "top, shrink");
+    contentPanel.add(runningTotalClientFeeDisplayAmountMaV.getView().newComponentPanel(), "top, shrink, align left");
+    contentPanel.add(Labels.newBlankLabel(), "top, growx, push, wrap");
 
     contentPanel.add(Labels.newNotes());
-    contentPanel.add(notesTextArea, "span 4,growx,push,wrap");
+    contentPanel.add(notesTextArea, "span 6,growx,push,wrap");
 
-    if (!isTrezorWallet()) {
-      contentPanel.add(enterPasswordMaV.getView().newComponentPanel(), "span 5,align right,wrap");
+    if (!isHardwareWallet()) {
+      contentPanel.add(enterPasswordMaV.getView().newComponentPanel(), "span 7,align right,wrap");
     }
 
     // Register components
@@ -206,46 +209,54 @@ public class SendBitcoinConfirmPanelView extends AbstractWizardPanelView<SendBit
 
   @Override
   protected void initialiseButtons(AbstractWizard<SendBitcoinWizardModel> wizard) {
-
     PanelDecorator.addCancelPreviousSend(this, wizard);
-
   }
 
   @Override
   public void fireInitialStateViewEvents() {
-
     // Send button starts off disabled for regular wallets, enabled for Trezor hard wallets
-    ViewEvents.fireWizardButtonEnabledEvent(getPanelName(), WizardButton.NEXT, isTrezorWallet());
-
+    ViewEvents.fireWizardButtonEnabledEvent(getPanelName(), WizardButton.NEXT, isHardwareWallet());
   }
 
-  private boolean isTrezorWallet() {
+  /**
+   * @return True if this is a hard wallet
+   */
+  private boolean isHardwareWallet() {
+
     return WalletManager.INSTANCE.getCurrentWalletSummary().isPresent() &&
-      WalletType.TREZOR_HARD_WALLET.equals(WalletManager.INSTANCE.getCurrentWalletSummary().get().getWalletType());
+            WalletType.TREZOR_HARD_WALLET.equals(WalletManager.INSTANCE.getCurrentWalletSummary().get().getWalletType())
+            ;
   }
 
   @Override
   public boolean beforeShow() {
-
     Configuration configuration = Configurations.currentConfiguration;
 
     final Coin amount;
-    if (getWizardModel().getPaymentSessionSummary().isPresent()) {
-
-      // User has received a Payment Request which may provide identify information
-      if (getWizardModel().getPkiVerificationData().isPresent()) {
-        // Use the display name as the recipient
-        recipientSummaryLabel.setText(getWizardModel().getPkiVerificationData().get().displayName);
-      } else {
+    if (getWizardModel().getPaymentRequestData().isPresent()) {
+      // User has received a BIP70 Payment Request
+      PaymentRequestData paymentRequestData = getWizardModel().getPaymentRequestData().get();
+      if (paymentRequestData.getIdentityDisplayName().isEmpty()) {
         // Unknown recipient
-        recipientSummaryLabel.setText(Languages.safeText(MessageKey.NOT_AVAILABLE));
+        recipientSummaryLabel = Labels.newValueLabel(Languages.safeText(MessageKey.NOT_AVAILABLE));
+      } else {
+        recipientSummaryLabel = Labels.newValueLabel(paymentRequestData.getIdentityDisplayName());
       }
+      amount = paymentRequestData.getAmountCoin().or(Coin.ZERO);
 
-      amount = getWizardModel().getPaymentSessionSummary().get().getPaymentSession().get().getValue();
 
+      // TODO check PKI
+//      try {
+//        PaymentSession paymentSession = new PaymentSession(paymentRequestData.getPaymentRequest(), false);
+//        Wallet.SendRequest sendRequest = paymentSession.getSendRequest();
+//
+//        transactionFeeDisplayAmountMaV.getModel().setCoinAmount(sendRequest.fee);
+//      } catch (PaymentProtocolException e) {
+//        e.printStackTrace();
+//      }
     } else {
-
-      amount = getWizardModel().getCoinAmount();
+      // Regular send with data entered by the user
+      amount = getWizardModel().getCoinAmount().or(Coin.ZERO);
 
       // Update the model and view for the recipient
       recipientSummaryLabel.setText(
@@ -253,23 +264,28 @@ public class SendBitcoinConfirmPanelView extends AbstractWizardPanelView<SendBit
           .getRecipient()
           .getSummary()
       );
-
     }
 
-    // Update the model and view for the amount
-    transactionDisplayAmountMaV.getModel().setCoinAmount(amount);
+    // Update the model and view for the transaction fee - by this point the prepareTransaction will have been called by either:
+    // (for regular sends) the SendBitcoinWizardModel#showNext
+    // (for BIP70 payment requests)or the SendBitcoinWizardModel#prepareWhenBIP70
+    Optional<Wallet.SendRequest> sendRequest = getWizardModel().getSendRequestSummary().getSendRequest();
+    if (sendRequest.isPresent()) {
+      transactionFeeDisplayAmountMaV.getModel().setCoinAmount(sendRequest.get().fee);
+    } else {
+      log.error("No send request - hence cannot set a tx fee");
+    }
     if (getWizardModel().getLocalAmount().isPresent()) {
       transactionDisplayAmountMaV.getModel().setLocalAmount(getWizardModel().getLocalAmount().get());
     } else {
       transactionDisplayAmountMaV.getModel().setLocalAmount(null);
     }
+
+    // Update the model and view for the amount
+    Preconditions.checkNotNull(amount);
+    transactionDisplayAmountMaV.getModel().setCoinAmount(amount);
     transactionDisplayAmountMaV.getView().updateView(configuration);
 
-    // Update the model and view for the transaction fee - by this point the prepareTransaction will have been called by the SendBitcoinWizardModel#showNext
-    Optional<Wallet.SendRequest> sendRequest = getWizardModel().getSendRequestSummary().getSendRequest();
-    if (sendRequest.isPresent()) {
-      transactionFeeDisplayAmountMaV.getModel().setCoinAmount(sendRequest.get().fee);
-    }
     transactionFeeDisplayAmountMaV.getModel().setLocalAmountVisible(false);
     transactionFeeDisplayAmountMaV.getView().updateView(configuration);
 
@@ -323,20 +339,11 @@ public class SendBitcoinConfirmPanelView extends AbstractWizardPanelView<SendBit
 
   @Override
   public void afterShow() {
-
-    SwingUtilities.invokeLater(
-      new Runnable() {
-        @Override
-        public void run() {
-          notesTextArea.requestFocusInWindow();
-        }
-      });
-
+    notesTextArea.requestFocusInWindow();
   }
 
   @Override
   public void updateFromComponentModels(Optional componentModel) {
-
     panelModel.setNotes(notesTextArea.getText());
 
     // Determine any events
@@ -345,15 +352,12 @@ public class SendBitcoinConfirmPanelView extends AbstractWizardPanelView<SendBit
       WizardButton.NEXT,
       isNextEnabled()
     );
-
   }
 
   /**
    * @return True if the "next" button should be enabled
    */
   private boolean isNextEnabled() {
-
     return !Strings.isNullOrEmpty(getPanelModel().get().getPasswordModel().getValue());
-
   }
 }

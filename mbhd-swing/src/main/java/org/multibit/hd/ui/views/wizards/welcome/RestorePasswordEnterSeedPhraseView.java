@@ -3,9 +3,9 @@ package org.multibit.hd.ui.views.wizards.welcome;
 import com.google.common.base.Optional;
 import com.google.common.base.Strings;
 import net.miginfocom.swing.MigLayout;
-import org.multibit.hd.brit.seed_phrase.Bip39SeedPhraseGenerator;
-import org.multibit.hd.brit.seed_phrase.SeedPhraseGenerator;
-import org.multibit.hd.core.utils.Dates;
+import org.multibit.commons.utils.Dates;
+import org.multibit.hd.brit.core.seed_phrase.Bip39SeedPhraseGenerator;
+import org.multibit.hd.brit.core.seed_phrase.SeedPhraseGenerator;
 import org.multibit.hd.ui.events.view.ViewEvents;
 import org.multibit.hd.ui.languages.MessageKey;
 import org.multibit.hd.ui.views.components.Components;
@@ -45,7 +45,7 @@ public class RestorePasswordEnterSeedPhraseView extends AbstractWizardPanelView<
    */
   public RestorePasswordEnterSeedPhraseView(AbstractWizard<WelcomeWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.RESTORE_PASSWORD_SEED_PHRASE_TITLE, AwesomeIcon.MAGIC);
+    super(wizard, panelName, AwesomeIcon.MAGIC, MessageKey.RESTORE_PASSWORD_SEED_PHRASE_TITLE);
 
   }
 
@@ -87,12 +87,7 @@ public class RestorePasswordEnterSeedPhraseView extends AbstractWizardPanelView<
   @Override
   public void afterShow() {
 
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        enterSeedPhraseMaV.getView().requestInitialFocus();
-      }
-    });
+    enterSeedPhraseMaV.getView().requestInitialFocus();
 
   }
 
@@ -139,7 +134,5 @@ public class RestorePasswordEnterSeedPhraseView extends AbstractWizardPanelView<
     boolean seedPhraseIsValid = generator.isValid(seedPhrase);
 
     return timestampIsValid && seedPhraseIsValid;
-
-
   }
 }

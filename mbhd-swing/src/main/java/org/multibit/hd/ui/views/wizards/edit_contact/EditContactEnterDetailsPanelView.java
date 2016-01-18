@@ -68,7 +68,7 @@ public class EditContactEnterDetailsPanelView extends AbstractWizardPanelView<Ed
    */
   public EditContactEnterDetailsPanelView(AbstractWizard<EditContactWizardModel> wizard, String panelName, EnterContactDetailsMode mode) {
 
-    super(wizard, panelName, mode.getMessageKey(), AwesomeIcon.EDIT);
+    super(wizard, panelName, AwesomeIcon.EDIT, mode.getMessageKey());
 
     this.mode = mode;
   }
@@ -244,19 +244,12 @@ public class EditContactEnterDetailsPanelView extends AbstractWizardPanelView<Ed
   @Override
   public void afterShow() {
 
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
+    name.requestFocusInWindow();
 
-        name.requestFocusInWindow();
-
-        // Ensure user overwrites
-        if (mode.equals(NEW)) {
-          name.selectAll();
-        }
-
-      }
-    });
+    // Ensure user overwrites
+    if (mode.equals(NEW)) {
+      name.selectAll();
+    }
 
   }
 

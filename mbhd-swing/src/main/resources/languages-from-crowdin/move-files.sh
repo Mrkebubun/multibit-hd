@@ -16,6 +16,10 @@ rmdir ./multibit-hd/af/
 mv -f ./multibit-hd/ar/language.properties ../languages/language_ar_AR.properties
 rmdir ./multibit-hd/ar/
 
+# Bulgarian
+mv -f ./multibit-hd/bg/language.properties ../languages/language_bg_BG.properties
+rmdir ./multibit-hd/bg/
+
 # Catalan
 mv -f ./multibit-hd/ca/language.properties ../languages/language_ca_ES.properties
 rmdir ./multibit-hd/ca/
@@ -103,6 +107,10 @@ rmdir ./multibit-hd/lt/
 # Lithuanian
 mv -f ./multibit-hd/lv/language.properties ../languages/language_lv_LV.properties
 rmdir ./multibit-hd/lv/
+
+# Mongolian
+mv -f ./multibit-hd/mn/language.properties ../languages/language_mn_MN.properties
+rmdir ./multibit-hd/mn/
 
 # Dutch
 mv -f ./multibit-hd/nl/language.properties ../languages/language_nl_NL.properties

@@ -1,9 +1,9 @@
 package org.multibit.hd.ui.views.wizards.payments;
 
-import org.bitcoinj.core.Coin;
 import com.google.common.base.Optional;
 import com.google.common.base.Strings;
 import net.miginfocom.swing.MigLayout;
+import org.bitcoinj.core.Coin;
 import org.multibit.hd.core.config.BitcoinConfiguration;
 import org.multibit.hd.core.config.Configurations;
 import org.multibit.hd.core.config.LanguageConfiguration;
@@ -13,6 +13,7 @@ import org.multibit.hd.core.dto.TransactionData;
 import org.multibit.hd.core.services.CoreServices;
 import org.multibit.hd.core.services.WalletService;
 import org.multibit.hd.core.store.TransactionInfo;
+import org.multibit.hd.ui.events.view.ViewEvents;
 import org.multibit.hd.ui.languages.Formats;
 import org.multibit.hd.ui.languages.Languages;
 import org.multibit.hd.ui.languages.MessageKey;
@@ -24,8 +25,10 @@ import org.multibit.hd.ui.views.fonts.AwesomeIcon;
 import org.multibit.hd.ui.views.themes.Themes;
 import org.multibit.hd.ui.views.wizards.AbstractWizard;
 import org.multibit.hd.ui.views.wizards.AbstractWizardPanelView;
+import org.multibit.hd.ui.views.wizards.WizardButton;
 
 import javax.swing.*;
+import java.text.DecimalFormat;
 
 /**
  * <p>View to provide the following to UI:</p>
@@ -34,7 +37,6 @@ import javax.swing.*;
  * </ul>
  *
  * @since 0.0.1
- *
  */
 public class TransactionAmountPanelView extends AbstractWizardPanelView<PaymentsWizardModel, TransactionOverviewPanelModel> {
 
@@ -44,18 +46,23 @@ public class TransactionAmountPanelView extends AbstractWizardPanelView<Payments
   private JLabel amountFiatValue;
   private JLabel miningFeePaidLabel;
   private JLabel miningFeePaidValue;
+  private JLabel miningFeePaidRateLabel;
+  private JLabel miningFeePaidRateValue;
   private JLabel clientFeePaidLabel;
   private JLabel clientFeePaidValue;
   private JLabel exchangeRateLabel;
   private JLabel exchangeRateValue;
+
+  private final DecimalFormat feeRateFormat;
 
   /**
    * @param wizard The wizard managing the states
    */
   public TransactionAmountPanelView(AbstractWizard<PaymentsWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.TRANSACTION_AMOUNT, AwesomeIcon.FILE_TEXT_O);
+    super(wizard, panelName, AwesomeIcon.FILE_TEXT_O, MessageKey.TRANSACTION_AMOUNT);
 
+    feeRateFormat = new DecimalFormat("0.00");
   }
 
   @Override
@@ -63,7 +70,7 @@ public class TransactionAmountPanelView extends AbstractWizardPanelView<Payments
 
     // Configure the panel model
     TransactionOverviewPanelModel panelModel = new TransactionOverviewPanelModel(
-            getPanelName()
+      getPanelName()
     );
     setPanelModel(panelModel);
   }
@@ -71,11 +78,12 @@ public class TransactionAmountPanelView extends AbstractWizardPanelView<Payments
   @Override
   public void initialiseContent(JPanel contentPanel) {
 
-    contentPanel.setLayout(new MigLayout(
-            Panels.migXYLayout(),
-            "[]10[][][]", // Column constraints
-            "[]10[]10[]10[]" // Row constraints
-    ));
+    contentPanel.setLayout(
+      new MigLayout(
+        Panels.migXYLayout(),
+        "[]10[][][]", // Column constraints
+        "[]10[]10[]10[]" // Row constraints
+      ));
 
     // Apply the theme
     contentPanel.setBackground(Themes.currentTheme.detailPanelBackground());
@@ -91,18 +99,21 @@ public class TransactionAmountPanelView extends AbstractWizardPanelView<Payments
     miningFeePaidLabel = Labels.newValueLabel("");
     // Add bitcoin unit to mining fee label
     LabelDecorator.applyBitcoinSymbolLabel(
-            miningFeePaidLabel,
-            Configurations.currentConfiguration.getBitcoin(),
-            Languages.safeText(MessageKey.TRANSACTION_FEE) + " ");
+      miningFeePaidLabel,
+      Configurations.currentConfiguration.getBitcoin(),
+      Languages.safeText(MessageKey.TRANSACTION_FEE) + " ");
     miningFeePaidValue = Labels.newValueLabel("");
 
     clientFeePaidLabel = Labels.newValueLabel(Languages.safeText(MessageKey.CLIENT_FEE));
     // Add bitcoin unit to client fee label
     LabelDecorator.applyBitcoinSymbolLabel(
-            clientFeePaidLabel,
-            Configurations.currentConfiguration.getBitcoin(),
-            Languages.safeText(MessageKey.CLIENT_FEE) + " ");
+      clientFeePaidLabel,
+      Configurations.currentConfiguration.getBitcoin(),
+      Languages.safeText(MessageKey.CLIENT_FEE) + " ");
     clientFeePaidValue = Labels.newValueLabel("");
+
+    miningFeePaidRateLabel = Labels.newValueLabel(Languages.safeText(MessageKey.TRANSACTION_FEE_RATE) + " " + Languages.TRANSACTION_FEE_RATE_UNIT);
+    miningFeePaidRateValue = Labels.newValueLabel("");
 
     exchangeRateLabel = Labels.newValueLabel(Languages.safeText(MessageKey.EXCHANGE_RATE_LABEL));
     exchangeRateValue = Labels.newValueLabel("");
@@ -121,6 +132,9 @@ public class TransactionAmountPanelView extends AbstractWizardPanelView<Payments
     contentPanel.add(miningFeePaidLabel);
     contentPanel.add(miningFeePaidValue, "wrap");
 
+    contentPanel.add(miningFeePaidRateLabel);
+    contentPanel.add(miningFeePaidRateValue, "wrap");
+
     contentPanel.add(clientFeePaidLabel);
     contentPanel.add(clientFeePaidValue, "wrap");
   }
@@ -133,13 +147,8 @@ public class TransactionAmountPanelView extends AbstractWizardPanelView<Payments
   @Override
   public void afterShow() {
 
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        getNextButton().requestFocusInWindow();
-        getNextButton().setEnabled(true);
-      }
-    });
+    getNextButton().requestFocusInWindow();
+    ViewEvents.fireWizardButtonEnabledEvent(getPanelName(), WizardButton.NEXT, true);
 
     update();
   }
@@ -177,12 +186,12 @@ public class TransactionAmountPanelView extends AbstractWizardPanelView<Payments
           }
         }
         // Miner's fee
-        updateMiningFee(languageConfiguration, bitcoinConfiguration, miningFee);
+        updateMiningFee(languageConfiguration, bitcoinConfiguration, miningFee, transactionData.getSize());
 
         // Client fee
         updateClientFee(languageConfiguration, bitcoinConfiguration, transactionData);
 
-        if (transactionData.getAmountCoin().compareTo(Coin.ZERO) >= 0) {
+        if (transactionData.getAmountCoin().or(Coin.ZERO).compareTo(Coin.ZERO) >= 0) {
 
           // Received bitcoin
           // Client and mining fee is not applicable
@@ -191,6 +200,8 @@ public class TransactionAmountPanelView extends AbstractWizardPanelView<Payments
           clientFeePaidValue.setVisible(false);
           miningFeePaidLabel.setVisible(false);
           miningFeePaidValue.setVisible(false);
+          miningFeePaidRateLabel.setVisible(false);
+          miningFeePaidRateValue.setVisible(false);
         } else {
 
           // Sent bitcoin
@@ -198,16 +209,18 @@ public class TransactionAmountPanelView extends AbstractWizardPanelView<Payments
           clientFeePaidValue.setVisible(true);
           miningFeePaidLabel.setVisible(true);
           miningFeePaidValue.setVisible(true);
+          miningFeePaidRateLabel.setVisible(true);
+          miningFeePaidRateValue.setVisible(true);
         }
       }
 
       if (paymentData.getAmountFiat() != null && paymentData.getAmountFiat().getCurrency().isPresent()) {
         // Add bitcoin unit to exchange rate label
         LabelDecorator.applyBitcoinSymbolLabel(
-                exchangeRateLabel,
-                Configurations.currentConfiguration.getBitcoin(),
-                Languages.safeText(MessageKey.EXCHANGE_RATE_LABEL) + " " + paymentData.getAmountFiat().getCurrency().get().getCurrencyCode()
-                        + " / ");
+          exchangeRateLabel,
+          Configurations.currentConfiguration.getBitcoin(),
+          Languages.safeText(MessageKey.EXCHANGE_RATE_LABEL) + " " + paymentData.getAmountFiat().getCurrency().get().getCurrencyCode()
+            + " / ");
       } else {
         exchangeRateLabel.setText(Languages.safeText(MessageKey.EXCHANGE_RATE_LABEL));
       }
@@ -236,25 +249,35 @@ public class TransactionAmountPanelView extends AbstractWizardPanelView<Payments
     }
   }
 
-  private void updateMiningFee(LanguageConfiguration languageConfiguration, BitcoinConfiguration bitcoinConfiguration,  Optional<Coin> miningFee) {
+  private void updateMiningFee(LanguageConfiguration languageConfiguration, BitcoinConfiguration bitcoinConfiguration, Optional<Coin> miningFee, int transactionSize) {
     if (miningFee.isPresent()) {
-      String[] minerFeePaidArray = Formats.formatCoinAsSymbolic(miningFee.get().negate(), languageConfiguration, bitcoinConfiguration, true);
+      Coin miningFeeAsCoin = miningFee.get();
+      String[] minerFeePaidArray = Formats.formatCoinAsSymbolic(miningFeeAsCoin.negate(), languageConfiguration, bitcoinConfiguration, true);
       miningFeePaidValue.setText(minerFeePaidArray[0] + minerFeePaidArray[1]);
+
+      // Work out fee rate
+      if (transactionSize > 0) {
+        double feeRate = (double)miningFeeAsCoin.getValue() / transactionSize;
+        miningFeePaidRateValue.setText(feeRateFormat.format(feeRate));
+      } else {
+        miningFeePaidRateValue.setText(Languages.safeText(MessageKey.NOT_AVAILABLE));
+      }
     } else {
       miningFeePaidValue.setText(Languages.safeText(MessageKey.NOT_AVAILABLE));
+      miningFeePaidRateValue.setText(Languages.safeText(MessageKey.NOT_AVAILABLE));
     }
   }
 
   private void updateAmountCoin(PaymentData paymentData, LanguageConfiguration languageConfiguration, BitcoinConfiguration bitcoinConfiguration) {
-    Coin amountCoin = paymentData.getAmountCoin();
+    Coin amountCoin = paymentData.getAmountCoin().or(Coin.ZERO);
 
     MessageKey messageKey = getMessageKeyForAmount(paymentData);
 
     // Add bitcoin unit to amount label
     LabelDecorator.applyBitcoinSymbolLabel(
-            amountBTCLabel,
-            Configurations.currentConfiguration.getBitcoin(),
-            Languages.safeText(messageKey) + " ");
+      amountBTCLabel,
+      Configurations.currentConfiguration.getBitcoin(),
+      Languages.safeText(messageKey) + " ");
 
     String[] balanceArray = Formats.formatCoinAsSymbolic(amountCoin, languageConfiguration, bitcoinConfiguration, true);
     amountBTCValue.setText(balanceArray[0] + balanceArray[1]);
@@ -278,7 +301,7 @@ public class TransactionAmountPanelView extends AbstractWizardPanelView<Payments
   }
 
   private MessageKey getMessageKeyForAmount(PaymentData paymentData) {
-    Coin amountCoin = paymentData.getAmountCoin();
+    Coin amountCoin = paymentData.getAmountCoin().or(Coin.ZERO);
 
     if (amountCoin.compareTo(Coin.ZERO) >= 0) {
       // Receive

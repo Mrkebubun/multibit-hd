@@ -38,7 +38,7 @@ public class CreateWalletSelectBackupLocationPanelView extends AbstractWizardPan
    */
   public CreateWalletSelectBackupLocationPanelView(AbstractWizard<WelcomeWizardModel> wizard, String panelName) {
 
-    super(wizard, panelName, MessageKey.SELECT_BACKUP_LOCATION_TITLE, AwesomeIcon.FOLDER_OPEN);
+    super(wizard, panelName, AwesomeIcon.FOLDER_OPEN, MessageKey.SELECT_BACKUP_LOCATION_TITLE);
 
   }
 
@@ -82,12 +82,7 @@ public class CreateWalletSelectBackupLocationPanelView extends AbstractWizardPan
   @Override
   public void afterShow() {
 
-    SwingUtilities.invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        selectFileMaV.getView().requestInitialFocus();
-      }
-    });
+    selectFileMaV.getView().requestInitialFocus();
 
   }
 

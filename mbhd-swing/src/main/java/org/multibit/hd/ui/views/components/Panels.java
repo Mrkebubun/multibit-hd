@@ -2,9 +2,13 @@ package org.multibit.hd.ui.views.components;
 
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
+import com.google.common.util.concurrent.Uninterruptibles;
 import net.miginfocom.swing.MigLayout;
 import org.multibit.hd.core.dto.CoreMessageKey;
+import org.multibit.hd.core.dto.WalletMode;
 import org.multibit.hd.core.managers.WalletManager;
+import org.multibit.hd.core.services.CoreServices;
+import org.multibit.hd.hardware.core.HardwareWalletService;
 import org.multibit.hd.ui.MultiBitUI;
 import org.multibit.hd.ui.languages.Languages;
 import org.multibit.hd.ui.languages.MessageKey;
@@ -23,6 +27,7 @@ import javax.swing.text.JTextComponent;
 import java.awt.*;
 import java.awt.event.ActionListener;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 /**
  * <p>Factory to provide the following to views:</p>
@@ -46,6 +51,11 @@ public class Panels {
 
   private static Optional<LightBoxPanel> lightBoxPopoverPanel = Optional.absent();
 
+  /**
+   * True if a deferred hide event has been triggered (this will block light box creation)
+   */
+  private static boolean deferredHideEventInProgress = false;
+
   public static void setApplicationFrame(JFrame applicationFrame) {
     Panels.applicationFrame = applicationFrame;
   }
@@ -53,6 +63,7 @@ public class Panels {
   public static JFrame getApplicationFrame() {
     return applicationFrame;
   }
+
 
   /**
    * <p>A default MiG layout constraint with:</p>
@@ -235,15 +246,66 @@ public class Panels {
   }
 
   /**
+   * @return True if a deferred hide is in progress
+   */
+  public synchronized static boolean isDeferredHideEventInProgress() {
+
+    return deferredHideEventInProgress;
+
+  }
+
+  /**
+   * @param value True if a deferred hide is in progress (see ViewEvents)
+   */
+  public synchronized static void setDeferredHideEventInProgress(boolean value) {
+
+    deferredHideEventInProgress = value;
+
+  }
+
+  /**
    * <p>Show a light box</p>
    *
    * @param panel The panel to act as the focus of the light box
    */
-  public synchronized static void showLightBox(JPanel panel) {
+  public synchronized static void showLightBox(final JPanel panel) {
 
     log.debug("Show light box");
 
     Preconditions.checkState(SwingUtilities.isEventDispatchThread(), "LightBox requires the EDT");
+
+    if (isDeferredHideEventInProgress()) {
+      // Delay execution until the deferred hide has completed
+      SwingUtilities.invokeLater(new Runnable() {
+        @Override
+        public void run() {
+
+          // We're running in deferred hide mode so allow a little extra time for other threads
+          // to complete
+          Uninterruptibles.sleepUninterruptibly(100, TimeUnit.MILLISECONDS);
+
+          // If we're still awaiting a deferred hide to complete then it's taken too long
+          Preconditions.checkState(!isDeferredHideEventInProgress(), "Deferred hide has taken too long to complete");
+
+          // Do not override this to replace the existing light box
+          // The problem is that the new light box is tripping up due to a race condition in the code
+          // which needs to be dealt with rather than masked behind deferred clean up
+          Preconditions.checkState(!lightBoxPanel.isPresent(), "Light box should never be called twice ");
+
+          // Prevent focus
+          allowFocus(Panels.getApplicationFrame(), false);
+
+          // Add the light box panel
+          lightBoxPanel = Optional.of(new LightBoxPanel(panel, JLayeredPane.MODAL_LAYER));
+
+        }
+      });
+
+      // Immediately return
+      return;
+    }
+
+    // Must in normal mode to be here
 
     // Do not override this to replace the existing light box
     // The problem is that the new light box is tripping up due to a race condition in the code
@@ -399,10 +461,9 @@ public class Panels {
   }
 
   /**
-   * <p>A standard "wallet selector" panel provides a means of choosing how a wallet is to be created/accessed</p>
+   * <p>A standard "wallet selector" panel provides a means of choosing how a wallet is to be restored</p>
    *
    * @param listener               The action listener
-   * @param createCommand          The create command name
    * @param existingWalletCommand  The existing wallet command name
    * @param restorePasswordCommand The restore credentials command name
    * @param restoreWalletCommand   The restore wallet command name
@@ -419,34 +480,50 @@ public class Panels {
 
     JPanel panel = Panels.newPanel();
 
-    JRadioButton radio1 = RadioButtons.newRadioButton(listener, MessageKey.CREATE_WALLET);
-    radio1.setSelected(true);
-    radio1.setActionCommand(createCommand);
+    boolean noSoftWallets = WalletManager.getSoftWalletSummaries(Optional.<Locale>absent()).isEmpty();
+
+    boolean addCreate = noSoftWallets;               // There are no soft wallets - hard start
+    boolean enableUseExisting = !noSoftWallets;      // There are some wallets to use
+    boolean enableRestorePassword = !noSoftWallets;  // If there are no soft wallets you cannot restore a password
+
+    JRadioButton radio1 = null;
+    if (addCreate) {
+      radio1 = RadioButtons.newRadioButton(listener, MessageKey.CREATE_WALLET);
+      radio1.setSelected(true);
+      radio1.setActionCommand(createCommand);
+    }
 
     JRadioButton radio2 = RadioButtons.newRadioButton(listener, MessageKey.USE_EXISTING_WALLET);
     radio2.setActionCommand(existingWalletCommand);
+    radio2.setSelected(!addCreate);
+    radio2.setEnabled(enableUseExisting);
+    if (!enableUseExisting) {
+      radio2.setForeground(UIManager.getColor("RadioButton.disabledText"));
+    }
 
     JRadioButton radio3 = RadioButtons.newRadioButton(listener, MessageKey.RESTORE_PASSWORD);
     radio3.setActionCommand(restorePasswordCommand);
+    radio3.setEnabled(enableRestorePassword);
+    if (!enableRestorePassword) {
+      radio3.setForeground(UIManager.getColor("RadioButton.disabledText"));
+    }
 
     JRadioButton radio4 = RadioButtons.newRadioButton(listener, MessageKey.RESTORE_WALLET);
     radio4.setActionCommand(restoreWalletCommand);
 
-    // Check for existing wallets
-    if (WalletManager.getSoftWalletSummaries(Optional.<Locale>absent()).isEmpty()) {
-      radio2.setEnabled(false);
-      radio2.setForeground(UIManager.getColor("RadioButton.disabledText"));
-    }
-
     // Wallet selection is mutually exclusive
     ButtonGroup group = new ButtonGroup();
-    group.add(radio1);
+    if (addCreate) {
+      group.add(radio1);
+    }
     group.add(radio2);
     group.add(radio3);
     group.add(radio4);
 
     // Add to the panel
-    panel.add(radio1, "wrap");
+    if (addCreate) {
+      panel.add(radio1, "wrap");
+    }
     panel.add(radio2, "wrap");
     panel.add(radio3, "wrap");
     panel.add(radio4, "wrap");
@@ -461,6 +538,7 @@ public class Panels {
    * @param createCommand         The create command name
    * @param existingWalletCommand The existing wallet command name
    * @param restoreWalletCommand  The restore wallet command name
+   * @param walletMode            The wallet mode
    *
    * @return A new "wallet selector" panel
    */
@@ -468,25 +546,35 @@ public class Panels {
     ActionListener listener,
     String createCommand,
     String existingWalletCommand,
-    String restoreWalletCommand
-  ) {
+    String restoreWalletCommand, WalletMode walletMode) {
 
     JPanel panel = Panels.newPanel();
 
-    JRadioButton radio1 = RadioButtons.newRadioButton(listener, MessageKey.TREZOR_CREATE_WALLET);
+    boolean enableUseExisting = !WalletManager.getWalletSummaries().isEmpty();
+
+    // Use the service associated with the wallet mode
+    Optional<HardwareWalletService> hardwareWalletService = CoreServices.getCurrentHardwareWalletService();
+
+    boolean enableRestore = hardwareWalletService.isPresent()
+      && hardwareWalletService.get().isDeviceReady()
+      && hardwareWalletService.get().isWalletPresent();
+
+    JRadioButton radio1 = RadioButtons.newRadioButton(listener, MessageKey.HARDWARE_CREATE_WALLET, walletMode.brand());
     radio1.setSelected(true);
     radio1.setActionCommand(createCommand);
 
     JRadioButton radio2 = RadioButtons.newRadioButton(listener, MessageKey.USE_EXISTING_WALLET);
     radio2.setActionCommand(existingWalletCommand);
+    radio2.setEnabled(enableUseExisting);
+    if (!enableUseExisting) {
+      radio2.setForeground(UIManager.getColor("RadioButton.disabledText"));
+    }
 
     JRadioButton radio3 = RadioButtons.newRadioButton(listener, MessageKey.RESTORE_WALLET);
     radio3.setActionCommand(restoreWalletCommand);
-
-    // Check for existing wallets
-    if (WalletManager.getWalletSummaries().isEmpty()) {
-      radio2.setEnabled(false);
-      radio2.setForeground(UIManager.getColor("RadioButton.disabledText"));
+    radio3.setEnabled(enableRestore);
+    if (!enableRestore) {
+      radio3.setForeground(UIManager.getColor("RadioButton.disabledText"));
     }
 
     // Wallet selection is mutually exclusive
@@ -540,32 +628,33 @@ public class Panels {
   }
 
   /**
-   * <p>A "Trezor tool selector" panel provides a means of choosing which Trezor tool to run</p>
+   * <p>A "Hardware wallet tool selector" panel provides a means of choosing which tool to run</p>
    *
    * @param listener            The action listener
-   * @param buyTrezorCommand    The buy trezor command
+   * @param buyDeviceCommand    The buy device command
    * @param verifyDeviceCommand The verify device command name
    * @param wipeDeviceCommand   The wipe device command name
+   * @param brand               The brand to apply to the message keys
    *
-   * @return A new "use Trezor selector" panel
+   * @return A new "use hardware wallet selector" panel
    */
-  public static JPanel newUseTrezorSelector(
+  public static JPanel newUseHardwareWalletSelector(
     ActionListener listener,
-    String buyTrezorCommand,
+    String buyDeviceCommand,
     String verifyDeviceCommand,
-    String wipeDeviceCommand
-  ) {
+    String wipeDeviceCommand,
+    String brand) {
 
     JPanel panel = Panels.newPanel();
 
-    JRadioButton radio1 = RadioButtons.newRadioButton(listener, MessageKey.BUY_TREZOR);
-    radio1.setActionCommand(buyTrezorCommand);
+    JRadioButton radio1 = RadioButtons.newRadioButton(listener, MessageKey.BUY_HARDWARE, brand);
+    radio1.setActionCommand(buyDeviceCommand);
     radio1.setSelected(true);
 
-    JRadioButton radio2 = RadioButtons.newRadioButton(listener, MessageKey.VERIFY_DEVICE);
+    JRadioButton radio2 = RadioButtons.newRadioButton(listener, MessageKey.HARDWARE_VERIFY_DEVICE, brand);
     radio2.setActionCommand(verifyDeviceCommand);
 
-    JRadioButton radio3 = RadioButtons.newRadioButton(listener, MessageKey.WIPE_DEVICE);
+    JRadioButton radio3 = RadioButtons.newRadioButton(listener, MessageKey.HARDWARE_WIPE_DEVICE, brand);
     radio3.setActionCommand(wipeDeviceCommand);
 
     // Action selection is mutually exclusive
@@ -648,6 +737,56 @@ public class Panels {
 
     // Add to the panel
     panel.add(Labels.newUnsupportedFirmwareNote(), "w 350");
+
+    return panel;
+  }
+
+  /**
+   * <p>A "deprecated firmware" panel displays instructions to the user about a hardware wallet with older firmware (still OK) being attached</p>
+   *
+   * @return A new "deprecated firmware" panel
+   */
+  public static JPanel newDeprecatedFirmware() {
+
+    JPanel panel = Panels.newPanel(
+      new MigLayout(
+        Panels.migXLayout(),
+        "[]", // Columns
+        "[]" // Rows
+      ));
+
+    // Ensure it is accessible
+    AccessibilityDecorator.apply(panel, CoreMessageKey.DEPRECATED_FIRMWARE_ATTACHED);
+
+    PanelDecorator.applyWarningTheme(panel);
+
+    // Add to the panel
+    panel.add(Labels.newDeprecatedFirmwareNote(), "w 350");
+
+    return panel;
+  }
+
+  /**
+   * <p>An "unsupported configuration" panel displays instructions to the user about a hardware wallet with unsupported configuration (behaviour risk) being attached</p>
+   *
+   * @return A new "unsupported configuration passphrase" panel
+   */
+  public static JPanel newUnsupportedConfigurationPassphrase() {
+
+    JPanel panel = Panels.newPanel(
+      new MigLayout(
+        Panels.migXLayout(),
+        "[]", // Columns
+        "[]" // Rows
+      ));
+
+    // Ensure it is accessible
+    AccessibilityDecorator.apply(panel, CoreMessageKey.UNSUPPORTED_CONFIGURATION_PASSPHRASE);
+
+    PanelDecorator.applyWarningTheme(panel);
+
+    // Add to the panel
+    panel.add(Labels.newUnsupportedConfigurationPassphrase(), "w 350");
 
     return panel;
   }
@@ -762,6 +901,18 @@ public class Panels {
     JPanel panel = new JPanel();
     panel.setMaximumSize(new Dimension(1, 10000));
     panel.setBorder(BorderFactory.createDashedBorder(Themes.currentTheme.headerPanelBackground(), 5, 5));
+
+    return panel;
+  }
+
+  /**
+   * New horizontal dashed separator
+   */
+  public static JPanel newHorizontalDashedSeparator() {
+
+    JPanel panel = new JPanel();
+    panel.setMaximumSize(new Dimension(10000, 1));
+    panel.setBorder(BorderFactory.createDashedBorder(Themes.currentTheme.dataEntryBorder(), 5, 5));
 
     return panel;
   }

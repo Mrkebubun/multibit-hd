@@ -8,7 +8,7 @@ import org.multibit.hd.core.blockexplorer.BlockExplorers;
 import org.multibit.hd.core.config.BitcoinConfiguration;
 import org.multibit.hd.core.config.Configurations;
 import org.multibit.hd.core.dto.BackupSummary;
-import org.multibit.hd.core.dto.PaymentRequestData;
+import org.multibit.hd.core.dto.MBHDPaymentRequestData;
 import org.multibit.hd.core.dto.Recipient;
 import org.multibit.hd.core.dto.WalletSummary;
 import org.multibit.hd.core.dto.comparators.BackupSummaryDescendingComparator;
@@ -23,10 +23,7 @@ import org.multibit.hd.ui.languages.MessageKey;
 import org.multibit.hd.ui.views.components.auto_complete.AutoCompleteDecorator;
 import org.multibit.hd.ui.views.components.auto_complete.AutoCompleteFilter;
 import org.multibit.hd.ui.views.components.auto_complete.AutoCompleteFilters;
-import org.multibit.hd.ui.views.components.display_amount.BitcoinSymbolListCellRenderer;
-import org.multibit.hd.ui.views.components.renderers.BackupSummaryListCellRenderer;
-import org.multibit.hd.ui.views.components.renderers.LanguageListCellRenderer;
-import org.multibit.hd.ui.views.components.renderers.WalletSummaryListCellRenderer;
+import org.multibit.hd.ui.views.components.renderers.*;
 import org.multibit.hd.ui.views.components.select_recipient.RecipientComboBoxEditor;
 import org.multibit.hd.ui.views.components.select_recipient.RecipientListCellRenderer;
 import org.multibit.hd.ui.views.themes.ThemeKey;
@@ -107,14 +104,11 @@ public class ComboBoxes {
    * The "currency" combo box action command
    */
   public static final String CURRENCY_COMMAND = "currency";
+
   /**
-   * The "Tor" combo box action command
+   * The "hardware" combo box action command
    */
-  public static final String TOR_COMMAND = "tor";
-  /**
-   * The "Trezor" combo box action command
-   */
-  public static final String TREZOR_COMMAND = "trezor";
+  public static final String HARDWARE_COMMAND = "hardware";
 
   /**
    * The "Show restore Beta 7 wallets"action command
@@ -134,6 +128,10 @@ public class ComboBoxes {
   public static <T> JComboBox<T> newComboBox(T[] items) {
 
     JComboBox<T> comboBox = new JComboBox<>(items);
+
+    // Use a list cell renderer to ensure Bitcoin symbols are correctly presented
+    ListCellRenderer<T> renderer = new ThemeAwareListCellRenderer<>();
+    comboBox.setRenderer(renderer);
 
     // Required to match icon button heights
     comboBox.setMinimumSize(new Dimension(25, MultiBitUI.NORMAL_ICON_SIZE + 14));
@@ -305,32 +303,14 @@ public class ComboBoxes {
    *
    * @return A new "yes/no" combo box
    */
-  public static JComboBox<String> newTorYesNoComboBox(ActionListener listener, boolean useTor) {
+  public static JComboBox<String> newHardwareYesNoComboBox(ActionListener listener, boolean useTor) {
 
     JComboBox<String> comboBox = newYesNoComboBox(listener, useTor);
 
     // Ensure it is accessible
-    AccessibilityDecorator.apply(comboBox, MessageKey.SELECT_TOR, MessageKey.SELECT_TOR_TOOLTIP);
+    AccessibilityDecorator.apply(comboBox, MessageKey.SELECT_HARDWARE_WALLET, MessageKey.SELECT_HARDWARE_WALLET_TOOLTIP);
 
-    comboBox.setActionCommand(TOR_COMMAND);
-
-    return comboBox;
-  }
-
-  /**
-   * @param listener The action listener to alert when the selection is made
-   * @param useTor   True if the "yes" option should be pre-selected
-   *
-   * @return A new "yes/no" combo box
-   */
-  public static JComboBox<String> newTrezorYesNoComboBox(ActionListener listener, boolean useTor) {
-
-    JComboBox<String> comboBox = newYesNoComboBox(listener, useTor);
-
-    // Ensure it is accessible
-    AccessibilityDecorator.apply(comboBox, MessageKey.SELECT_TREZOR, MessageKey.SELECT_TREZOR_TOOLTIP);
-
-    comboBox.setActionCommand(TREZOR_COMMAND);
+    comboBox.setActionCommand(HARDWARE_COMMAND);
 
     return comboBox;
   }
@@ -397,22 +377,6 @@ public class ComboBoxes {
 
   /**
    * @param listener The action listener to alert when the selection is made
-   *
-   * @return A new "history checkbox" combo box (all, none) - kept separate from contacts
-   */
-  public static JComboBox<String> newHistoryCheckboxComboBox(ActionListener listener) {
-
-    JComboBox<String> comboBox = newContactsCheckboxComboBox(listener);
-
-    // Ensure it is accessible
-    AccessibilityDecorator.apply(comboBox, MessageKey.HISTORY, MessageKey.HISTORY_TOOLTIP);
-
-    return comboBox;
-
-  }
-
-  /**
-   * @param listener The action listener to alert when the selection is made
    * @param locale   The locale to use for initial selection
    *
    * @return A new "language" combo box containing all supported languages and variants
@@ -466,20 +430,20 @@ public class ComboBoxes {
 
   /**
    * @param listener               The action listener to alert when the selection is made
-   * @param paymentRequestDataList The list of paymentRequestData to put in the combo box
+   * @param MBHDPaymentRequestDataList The list of paymentRequestData to put in the combo box
    *
    * @return A new "payment requests" combo box containing all supported languages and variants
    */
-  public static JComboBox<PaymentRequestData> newPaymentRequestsComboBox(ActionListener listener, List<PaymentRequestData> paymentRequestDataList) {
+  public static JComboBox<MBHDPaymentRequestData> newPaymentRequestsComboBox(ActionListener listener, List<MBHDPaymentRequestData> MBHDPaymentRequestDataList) {
 
     // Populate the combo box and declare a suitable renderer
-    JComboBox<PaymentRequestData> comboBox = newReadOnlyComboBox(paymentRequestDataList.toArray(new PaymentRequestData[paymentRequestDataList.size()]));
+    JComboBox<MBHDPaymentRequestData> comboBox = newReadOnlyComboBox(MBHDPaymentRequestDataList.toArray(new MBHDPaymentRequestData[MBHDPaymentRequestDataList.size()]));
 
     // Ensure it is accessible
     AccessibilityDecorator.apply(comboBox, MessageKey.CHOOSE_PAYMENT_REQUEST, MessageKey.CHOOSE_PAYMENT_REQUEST_TOOLTIP);
 
     // Can use the ordinal due to the declaration ordering
-    if (paymentRequestDataList.size() > 0) {
+    if (MBHDPaymentRequestDataList.size() > 0) {
       comboBox.setSelectedIndex(0);
     }
 

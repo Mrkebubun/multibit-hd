@@ -315,8 +315,7 @@ public class BackupService extends AbstractService {
         rememberedPasswordForCloudBackup = Optional.absent();
       } catch (IOException ioe) {
         log.error("Failed to perform cloud backup", ioe);
-        CoreServices.logHistory("Failed to perform cloud backup. Message: " + ioe.getMessage());
-        CoreEvents.fireSecurityEvent(SecuritySummary.newBackupFailed());
+        CoreEvents.fireEnvironmentEvent(EnvironmentSummary.newBackupFailed());
       }
     } else {
       log.debug("Cannot perform cloud backup as no remembered wallet id or password is available");
